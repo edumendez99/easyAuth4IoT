@@ -1,10 +1,14 @@
+<p align="center">
+  <img src="static/images/app_logo.png" alt="easyAuth4IoT logo" width="320">
+</p>
+
 # easyAuth4IoT
 Gestor de credenciales y contraseñas para IoT con cifrado local (cliente) y del lado del servidor.
 
 ## Requisitos
 
 - Python 3.10+
-- MongoDB 5.0+ en ejecución (local o remoto)
+- MongoDB 5.0+ en ejecución (local o remoto) Lo puedes instalar de forma secilla utilizando docker (https://hub.docker.com/r/mongo)
 - pip / virtualenv
 
 ## Inicio Rápido
@@ -60,7 +64,6 @@ El archivo `env.txt` en la raíz del proyecto define la configuración. Claves s
   - `ui_primary`: color primario hex (p. ej. `#4fe2df`)
   - `ui_secondary`: color secundario hex (p. ej. `#571cd8`)
 
-
 - Seguridad:
   - `secret_key`: clave secreta de Flask (obligatoria en producción)
   - `db_encryption_key`: clave maestra para cifrado en servidor (obligatoria para cifrado del lado servidor).
@@ -87,6 +90,15 @@ Ejecuta tantas veces como quieras; es idempotente en inserciones de ejemplo e í
 - Cifrado en Servidor:
   - Si no hay semilla local, el backend cifra automáticamente los elementos del Vault y archivos usando `DB_ENCRYPTION_KEY`.
   - Para búsqueda: los ítems cifrados en servidor se devuelven descifrados por defecto (solo sus campos de metadatos), permitiendo filtro por texto.
+
+## Capturas de pantalla
+
+<p align="center">
+  <img src="static/images/app_icon.png" alt="Icono" width="96">
+</p>
+
+![Logo](static/images/app_logo.png)
+![Demo](static/images/screenshot_demo.png)
 
 
 ## Ejecutar en Producción
