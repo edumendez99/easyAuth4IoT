@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - {{ current_user.username }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="card-title mb-0">Profile Settings</h3>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-success d-none" id="successAlert">
+                        Profile updated successfully!
+                    </div>
+                    <div class="alert alert-danger d-none" id="errorAlert"></div>
+
+                    <form id="profileForm" class="needs-validation" novalidate>
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="username" value="{{ current_user.username }}" readonly>
+                            <div class="form-text">Username cannot be changed</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="email" value="{{ current_user.email }}" required>
+                            <div class="invalid-feedback">Please enter a valid email address</div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="role" class="form-label">Role</label>
+                            <input type="text" class="form-control" id="role" value="{{ current_user.role }}" readonly>
+                            <div class="form-text">Role can only be changed by administrators</div>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <h4 class="mb-3">Change Password</h4>
+                        <div class="mb-3">
+                            <label for="currentPassword" class="form-label">Current Password</label>
+                            <input type="password" class="form-control" id="currentPassword">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="newPassword" class="form-label">New Password</label>
+                            <input type="password" class="form-control" id="newPassword">
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                            <input type="password" class="form-control" id="confirmPassword">
+                            <div class="invalid-feedback">Passwords do not match</div>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>Save Changes
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('profileForm');
+    const successAlert = document.getElementById('successAlert');
+    const errorAlert = document.getElementById('errorAlert');
+    const newPassword = document.getElementById('newPassword');
+    const confirmPassword = document.getElementById('confirmPassword');
+
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        // Hide alerts
+        successAlert.classList.add('d-none');
+        errorAlert.classList.add('d-none');
+
+        // Validate password match if changing password
+        if (newPassword.value || confirmPassword.value) {
+            if (newPassword.value !== confirmPassword.value) {
+                confirmPassword.classList.add('is-invalid');
+                return;
+            }
+        }
+
+        // Prepare data
+        const data = {
+            email: document.getElementById('email').value
+        };
+
+        // Add password data if changing password
+        if (newPassword.value && document.getElementById('currentPassword').value) {
+            data.current_password = document.getElementById('currentPassword').value;
+            data.password = newPassword.value;
+        }
+
+        try {
+            const response = await fetch('/users/profile', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                successAlert.classList.remove('d-none');
+                // Clear password fields
+                document.getElementById('currentPassword').value = '';
+                newPassword.value = '';
+                confirmPassword.value = '';
+            } else {
+                errorAlert.textContent = result.error || 'An error occurred';
+                errorAlert.classList.remove('d-none');
+            }
+        } catch (error) {
+            errorAlert.textContent = 'An error occurred while updating profile';
+            errorAlert.classList.remove('d-none');
+        }
+    });
+
+    // Password confirmation validation
+    confirmPassword.addEventListener('input', function() {
+        if (newPassword.value !== this.value) {
+            this.classList.add('is-invalid');
+        } else {
+            this.classList.remove('is-invalid');
+        }
+    });
+});
+</script>
+{% endblock %}

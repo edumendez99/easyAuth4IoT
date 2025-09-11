@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+
+{% block title %}easyAuth • Seguridad Futurista{% endblock %}
+
+{% block content %}
+<section class="home-hero position-relative overflow-hidden">
+  <div class="hero-bg"></div>
+  <div class="container py-5 position-relative" style="z-index:2;">
+    <div class="row align-items-center">
+      <div class="col-lg-7">
+        <h1 class="display-4 fw-bold mb-3 text-gradient">Tu bóveda de contraseñas y credenciales IoT</h1>
+        <p class="lead mb-4 text-muted">Gestiona contraseñas, llaves y credenciales de dispositivos con cifrado local en el navegador. Todo bajo un enfoque zero‑knowledge y listo para producción.</p>
+        <div class="mb-4">
+          <span class="badge-chip me-2"><i class="fa-solid fa-lock me-1"></i> Cifrado local</span>
+          <span class="badge-chip me-2"><i class="fa-solid fa-user-secret me-1"></i> Zero‑knowledge</span>
+          <span class="badge-chip me-2"><i class="fa-solid fa-microchip me-1"></i> Dispositivos</span>
+          <span class="badge-chip me-2"><i class="fa-solid fa-key me-1"></i> Tokens y SSH</span>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+          {% if current_user.is_authenticated %}
+            <a class="btn btn-primary btn-lg" href="{{ url_for('vault.list_page') }}"><i class="fa-solid fa-lock me-2"></i> Contraseñas</a>
+            <a class="btn btn-outline-primary btn-lg" href="{{ url_for('devices.list_page') }}"><i class="fa-solid fa-microchip me-2"></i> Dispositivos</a>
+            <a class="btn btn-outline-secondary btn-lg" href="{{ url_for('user.profile') }}"><i class="fa-solid fa-id-card me-2"></i> Mi Perfil</a>
+            {% if current_user.role == 'admin' %}
+              <a class="btn btn-secondary btn-lg" href="{{ url_for('user.list_users') }}"><i class="fa-solid fa-users-gear me-2"></i> Usuarios</a>
+            {% endif %}
+          {% else %}
+            <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login_page') }}"><i class="fa-solid fa-right-to-bracket me-2"></i> Iniciar sesión</a>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col-lg-5 mt-5 mt-lg-0">
+        <div class="glass-grid">
+          <a class="glass-card" href="{{ url_for('vault.list_page') }}">
+            <div class="feature-icon bg-grad-1"><i class="fa-solid fa-lock"></i></div>
+            <div>
+              <h5 class="mb-1">Bóveda Personal</h5>
+              <div class="text-muted small">Contraseñas, tokens, notas, tarjetas, TOTP y archivos cifrados.</div>
+            </div>
+          </a>
+          <a class="glass-card" href="{{ url_for('devices.list_page') }}">
+            <div class="feature-icon bg-grad-2"><i class="fa-solid fa-microchip"></i></div>
+            <div>
+              <h5 class="mb-1">Credenciales de Dispositivos</h5>
+              <div class="text-muted small">User/Pass, tokens y certificados con flujo de edición seguro.</div>
+            </div>
+          </a>
+          {% if current_user.is_authenticated and current_user.local_key %}
+          <a class="glass-card" href="#" data-bs-toggle="modal" data-bs-target="#localCryptoModal">
+            <div class="feature-icon bg-grad-3"><i class="fa-solid fa-lock"></i></div>
+            <div>
+              <h5 class="mb-1">Semilla de Cifrado Local</h5>
+              <div class="text-muted small">Activa/gestiona tu semilla BIP‑39 para cifrado en el cliente.</div>
+            </div>
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- floating orbs background -->
+  <div class="orb orb-1"></div>
+  <div class="orb orb-2"></div>
+  <div class="orb orb-3"></div>
+</section>
+
+<section class="container py-5">
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="security-card h-100">
+        <div class="security-icon text-success"><i class="fa-solid fa-user-shield"></i></div>
+        <h5>Zero‑Knowledge</h5>
+        <p class="text-muted mb-0">Con el cifrado local el servidor nunca ve tus secretos en claro: el cifrado ocurre 100% en tu navegador.</p>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="security-card h-100">
+        <div class="security-icon text-info"><i class="fa-solid fa-key"></i></div>
+        <h5>Semilla Local</h5>
+        <p class="text-muted mb-0">Protege todo con tu semilla de 12 palabras. Una forma fácil y segura de proteger tus claves.</p>
+      </div>
+    </div>
+    <div class="col-lg-4">
+      <div class="security-card h-100">
+        <div class="security-icon text-warning"><i class="fa-solid fa-bolt"></i></div>
+        <h5>UX Moderna</h5>
+        <p class="text-muted mb-0">Modales unificados, edición segura, subida cifrada de archivos y búsqueda rápida.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .home-hero{ position:relative; }
+  .home-hero .hero-bg{ position:absolute; inset:0; background: radial-gradient(1200px 600px at 0% 0%, rgba(0,159,140,0.15), transparent), radial-gradient(1200px 600px at 100% 100%, rgba(218,228,118,0.25), transparent), linear-gradient(180deg, #f8fbfa 0%, #ffffff 70%); }
+  .text-gradient{ background: linear-gradient(90deg, #005349, #00c2a8, #dae476); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .badge-chip{ display:inline-flex; align-items:center; vertical-align:middle; gap:.5rem; padding:.45rem .7rem; border-radius:999px; background:rgba(0,159,140,.1); color:#005349; border:1px solid rgba(0,159,140,.25); font-weight:600; line-height:1; }
+  .badge-chip i{ width:1.1em; text-align:center; opacity:.95; }
+
+  .glass-grid{ display:grid; grid-template-columns: 1fr; gap:14px; }
+  @media (min-width: 992px){ .glass-grid{ grid-template-columns: 1fr; } }
+  .glass-card{ display:flex; align-items:center; gap:14px; padding:16px; border-radius:16px; background: rgba(255,255,255,0.6); backdrop-filter: blur(8px); border:1px solid rgba(0,0,0,0.06); text-decoration:none; transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+  .glass-card:hover{ transform: translateY(-2px); box-shadow: 0 8px 28px rgba(0,0,0,.08); border-color: rgba(0,83,73,.25); text-decoration:none; }
+  .feature-icon{ width:44px; height:44px; border-radius:12px; display:grid; place-items:center; color:#fff; font-size:20px; box-shadow: inset 0 0 8px rgba(255,255,255,.25), 0 6px 14px rgba(0,0,0,.15); }
+  .bg-grad-1{ background: linear-gradient(135deg, #0ea5e9, #22d3ee); }
+  .bg-grad-2{ background: linear-gradient(135deg, #22c55e, #84cc16); }
+  .bg-grad-3{ background: linear-gradient(135deg, #f59e0b, #f97316); }
+  .bg-grad-4{ background: linear-gradient(135deg, #8b5cf6, #06b6d4); }
+
+  .security-card{ padding:22px; border-radius:16px; background:#fff; border:1px solid rgba(0,0,0,0.06); box-shadow:0 8px 28px rgba(0,0,0,.05); }
+  .security-icon{ font-size:28px; margin-bottom:8px; }
+
+  .orb{ position:absolute; border-radius:50%; filter: blur(40px); opacity:.35; animation: float 12s ease-in-out infinite; }
+  .orb-1{ width:260px; height:260px; background:#00c2a8; top: -60px; right: -60px; animation-delay: 0s; }
+  .orb-2{ width:220px; height:220px; background:#dae476; bottom: -60px; left: -40px; animation-delay: 2s; }
+  .orb-3{ width:180px; height:180px; background:#8b5cf6; top: 40%; left: 50%; transform: translateX(-50%); animation-delay: 4s; }
+  @keyframes float{ 0%{ transform: translateY(0) scale(1);} 50%{ transform: translateY(-10px) scale(1.03);} 100%{ transform: translateY(0) scale(1);} }
+
+  .btn-outline-secondary{ border-color:#e2e8f0; color:#334155; }
+  .btn-outline-secondary:hover{ background:#e2e8f0; color:#111827; }
+</style>
+{% endblock %}

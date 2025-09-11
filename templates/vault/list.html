@@ -1,0 +1,842 @@
+{% extends 'base.html' %}
+{% block title %}Contraseñas{% endblock %}
+{% block content %}
+<div class="container py-4" id="vaultApp">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div>
+      <h2 class="d-inline-block mb-0"><i class="fa-solid fa-lock"></i> Contraseñas</h2>
+      <div class="small text-muted">Gestión personal de contraseñas y secretos cifrados</div>
+    </div>
+    <div class="d-flex gap-2">
+      <input type="text" class="form-control" style="max-width: 300px;" v-model.trim="search.query" @keyup.enter="fetchItems" placeholder="Buscar...">
+      <select class="form-select" style="max-width: 180px;" v-model="search.type" @change="fetchItems">
+        <option value="all">Todos los tipos</option>
+        <option value="password">Contraseña</option>
+        <option value="note">Nota segura</option>
+        <option value="token">Token/API Key</option>
+        <option value="card">Tarjeta</option>
+        <option value="identity">Identidad</option>
+        <option value="totp">TOTP (2FA)</option>
+        <option value="ssh">SSH Key</option>
+        <option value="pgp">PGP Key</option>
+        <option value="file">Archivo</option>
+      </select>
+      <button class="btn btn-outline-secondary" @click="fetchItems"><i class="fa-solid fa-magnifying-glass"></i></button>
+      <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#newItemModal">
+        <i class="fa-solid fa-plus"></i> Nuevo elemento
+      </button>
+    </div>
+  </div>
+
+  <!-- Modal: Nuevo elemento -->
+  <div class="modal fade" id="newItemModal" tabindex="-1" aria-labelledby="newItemModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="newItemModalLabel"><i class="fa-solid fa-plus"></i> Nuevo elemento</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+
+        <div class="modal-body">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label">Tipo</label>
+              <select class="form-select" v-model="form.type">
+                <option value="password">Contraseña</option>
+                <option value="note">Nota segura</option>
+                <option value="token">Token/API Key</option>
+                <option value="card">Tarjeta</option>
+                <option value="identity">Identidad</option>
+                <option value="totp">TOTP (2FA)</option>
+                <option value="ssh">SSH Key</option>
+                <option value="pgp">PGP Key</option>
+                <option value="file">Archivo(s) adjuntos</option>
+              </select>
+            </div>
+
+        <!-- COMMON: title -->
+        <template v-if="['password','note','card','identity','token','totp','ssh','pgp'].includes(form.type)">
+          <div class="col-md-3">
+            <label class="form-label">Título</label>
+            <input type="text" class="form-control" v-model.trim="form.title" placeholder="opcional">
+          </div>
+        </template>
+
+        <!-- COMMON: URL (aplica a todos los tipos, incluido file) -->
+        <div class="col-md-4">
+          <label class="form-label">URL</label>
+          <input type="url" class="form-control" v-model.trim="form.url" placeholder="https://...">
+        </div>
+
+        <!-- PASSWORD -->
+        <template v-if="form.type==='password'">
+          <div class="col-md-3">
+            <label class="form-label">Usuario</label>
+            <input type="text" class="form-control" v-model.trim="form.username" placeholder="usuario">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Contraseña</label>
+            <input :type="showPass ? 'text' : 'password'" class="form-control" v-model="form.password" placeholder="contraseña">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Nota</label>
+            <input type="text" class="form-control" v-model="form.note" placeholder="opcional">
+          </div>
+        </template>
+
+        <!-- NOTE -->
+        <template v-if="form.type==='note'">
+          <div class="col-md-9">
+            <label class="form-label">Contenido</label>
+            <textarea class="form-control" rows="2" v-model="form.note" placeholder="nota segura"></textarea>
+          </div>
+        </template>
+
+        <!-- TOKEN -->
+        <template v-if="form.type==='token'">
+          <div class="col-md-5">
+            <label class="form-label">Token</label>
+            <input type="text" class="form-control" v-model.trim="form.token" placeholder="token o API key">
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Etiqueta</label>
+            <input type="text" class="form-control" v-model.trim="form.label" placeholder="opcional">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Nota</label>
+            <input type="text" class="form-control" v-model="form.note" placeholder="opcional">
+          </div>
+        </template>
+
+        <!-- CARD -->
+        <template v-if="form.type==='card'">
+          <div class="col-md-3">
+            <label class="form-label">Marca</label>
+            <input type="text" class="form-control" v-model.trim="form.brand" placeholder="VISA, Master...">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Nombre</label>
+            <input type="text" class="form-control" v-model.trim="form.name" placeholder="nombre en tarjeta">
+          </div>
+          <div class="col-md-3">
+            <label class="form-label">Número</label>
+            <input type="text" class="form-control" v-model.trim="form.number" placeholder="#### #### #### ####">
+          </div>
+          <div class="col-md-1">
+            <label class="form-label">Mes</label>
+            <input type="text" class="form-control" v-model.trim="form.exp_month" placeholder="MM">
+          </div>
+          <div class="col-md-1">
+            <label class="form-label">Año</label>
+            <input type="text" class="form-control" v-model.trim="form.exp_year" placeholder="YY">
+          </div>
+          <div class="col-md-1">
+            <label class="form-label">CVC</label>
+            <input type="text" class="form-control" v-model.trim="form.cvc" placeholder="CVC">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Nota</label>
+            <input type="text" class="form-control" v-model="form.note" placeholder="opcional">
+          </div>
+        </template>
+
+        <!-- IDENTITY -->
+        <template v-if="form.type==='identity'">
+          <div class="col-md-3"><label class="form-label">Nombre completo</label><input type="text" class="form-control" v-model.trim="form.full_name"></div>
+          <div class="col-md-3"><label class="form-label">Email</label><input type="email" class="form-control" v-model.trim="form.email"></div>
+          <div class="col-md-3"><label class="form-label">Teléfono</label><input type="text" class="form-control" v-model.trim="form.phone"></div>
+          <div class="col-md-3"><label class="form-label">Documento</label><input type="text" class="form-control" v-model.trim="form.doc_id" placeholder="DNI, ID, etc."></div>
+          <div class="col-md-12"><label class="form-label">Dirección</label><input type="text" class="form-control" v-model.trim="form.address"></div>
+          <div class="col-md-12"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="form.note" placeholder="opcional"></div>
+        </template>
+
+        <!-- TOTP -->
+        <template v-if="form.type==='totp'">
+          <div class="col-md-3"><label class="form-label">Issuer</label><input type="text" class="form-control" v-model.trim="form.issuer"></div>
+          <div class="col-md-3"><label class="form-label">Cuenta</label><input type="text" class="form-control" v-model.trim="form.account"></div>
+          <div class="col-md-3"><label class="form-label">Secreto (Base32)</label><input type="text" class="form-control" v-model.trim="form.secret"></div>
+          <div class="col-md-1"><label class="form-label">Digits</label><input type="number" min="6" max="8" class="form-control" v-model.number="form.digits"></div>
+          <div class="col-md-1"><label class="form-label">Periodo</label><input type="number" min="15" max="60" class="form-control" v-model.number="form.period"></div>
+          <div class="col-md-1"><label class="form-label">Alg</label>
+            <select class="form-select" v-model="form.algorithm">
+              <option>SHA1</option>
+              <option>SHA256</option>
+              <option>SHA512</option>
+            </select>
+          </div>
+          <div class="col-md-12">
+            <label class="form-label">Importar otpauth://</label>
+            <div class="input-group">
+              <input type="text" class="form-control" v-model.trim="totpUrl" placeholder="otpauth://totp/Issuer:Account?secret=...&issuer=...&algorithm=SHA1&digits=6&period=30">
+              <button class="btn btn-outline-primary" type="button" @click="importOtpAuth"><i class="fa-solid fa-file-import"></i> Importar</button>
+            </div>
+            <div class="form-text">Pega una URL otpauth:// para autocompletar issuer, cuenta, secreto, etc.</div>
+          </div>
+        </template>
+
+        <!-- SSH/PGP -->
+        <template v-if="form.type==='ssh'">
+          <div class="col-md-6"><label class="form-label">Private Key</label><textarea class="form-control" rows="3" v-model="form.private_key" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></div>
+          <div class="col-md-6"><label class="form-label">Public Key</label><textarea class="form-control" rows="3" v-model="form.public_key" placeholder="ssh-ed25519 AAAA..."></textarea></div>
+          <div class="col-md-12"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="form.note" placeholder="opcional"></div>
+        </template>
+        <template v-if="form.type==='pgp'">
+          <div class="col-md-6"><label class="form-label">Private Key</label><textarea class="form-control" rows="3" v-model="form.private_key" placeholder="-----BEGIN PGP PRIVATE KEY BLOCK-----"></textarea></div>
+          <div class="col-md-6"><label class="form-label">Public Key</label><textarea class="form-control" rows="3" v-model="form.public_key" placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----"></textarea></div>
+          <div class="col-md-12"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="form.note" placeholder="opcional"></div>
+        </template>
+
+        <!-- FILES -->
+        <template v-if="form.type==='file'">
+          <div class="col-md-6"><label class="form-label">Archivo(s)</label><input type="file" class="form-control" multiple @change="onFilesChange"></div>
+          <div class="col-md-3"><label class="form-label">Etiqueta</label><input type="text" class="form-control" v-model.trim="form.label" placeholder="opcional"></div>
+          <div class="col-md-3"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="form.note" placeholder="opcional"></div>
+        </template>
+
+          </div>
+          <div class="form-text mt-2">Tus elementos se cifran localmente si tu usuario requiere cifrado local.</div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" @click="createItem"><i class="fa-solid fa-save"></i> Guardar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Editar elemento -->
+  <div class="modal fade" id="editItemModal" tabindex="-1" aria-labelledby="editItemModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="editItemModalLabel"><i class="fa-solid fa-pen"></i> Editar elemento</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+              <label class="form-label">Tipo</label>
+              <input type="text" class="form-control" :value="edit.type" disabled>
+            </div>
+
+            <!-- COMMON title -->
+            <template v-if="['password','note','card','identity','token','totp','ssh','pgp'].includes(edit.type)">
+              <div class="col-md-3">
+                <label class="form-label">Título</label>
+                <input type="text" class="form-control" v-model.trim="edit.title" placeholder="opcional">
+              </div>
+            </template>
+
+            <!-- COMMON URL -->
+            <div class="col-md-4">
+              <label class="form-label">URL</label>
+              <input type="url" class="form-control" v-model.trim="edit.url" placeholder="https://...">
+            </div>
+
+            <!-- PASSWORD -->
+            <template v-if="edit.type==='password'">
+              <div class="col-md-3"><label class="form-label">Usuario</label><input type="text" class="form-control" v-model.trim="edit.username"></div>
+              <div class="col-md-3"><label class="form-label">Contraseña</label><div class="input-group"><input :type="editShowPass?'text':'password'" class="form-control" v-model="edit.password"><button class="btn btn-outline-secondary" type="button" @click="editShowPass=!editShowPass"><i :class="editShowPass?'fa-solid fa-eye-slash':'fa-solid fa-eye'"></i></button></div></div>
+              <div class="col-md-3"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="edit.note"></div>
+            </template>
+
+            <!-- NOTE -->
+            <template v-if="edit.type==='note'">
+              <div class="col-md-9"><label class="form-label">Contenido</label><textarea class="form-control" rows="2" v-model="edit.note"></textarea></div>
+            </template>
+
+            <!-- TOKEN -->
+            <template v-if="edit.type==='token'">
+              <div class="col-md-5"><label class="form-label">Token</label><input type="text" class="form-control" v-model.trim="edit.token"></div>
+              <div class="col-md-4"><label class="form-label">Etiqueta</label><input type="text" class="form-control" v-model.trim="edit.label"></div>
+              <div class="col-md-3"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="edit.note"></div>
+            </template>
+
+            <!-- CARD -->
+            <template v-if="edit.type==='card'">
+              <div class="col-md-3"><label class="form-label">Marca</label><input type="text" class="form-control" v-model.trim="edit.brand"></div>
+              <div class="col-md-3"><label class="form-label">Nombre</label><input type="text" class="form-control" v-model.trim="edit.name"></div>
+              <div class="col-md-3"><label class="form-label">Número</label><input type="text" class="form-control" v-model.trim="edit.number"></div>
+              <div class="col-md-1"><label class="form-label">Mes</label><input type="text" class="form-control" v-model.trim="edit.exp_month"></div>
+              <div class="col-md-1"><label class="form-label">Año</label><input type="text" class="form-control" v-model.trim="edit.exp_year"></div>
+              <div class="col-md-1"><label class="form-label">CVC</label><input type="text" class="form-control" v-model.trim="edit.cvc"></div>
+              <div class="col-md-6"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="edit.note"></div>
+            </template>
+
+            <!-- IDENTITY -->
+            <template v-if="edit.type==='identity'">
+              <div class="col-md-3"><label class="form-label">Nombre completo</label><input type="text" class="form-control" v-model.trim="edit.full_name"></div>
+              <div class="col-md-3"><label class="form-label">Email</label><input type="email" class="form-control" v-model.trim="edit.email"></div>
+              <div class="col-md-3"><label class="form-label">Teléfono</label><input type="text" class="form-control" v-model.trim="edit.phone"></div>
+              <div class="col-md-3"><label class="form-label">Documento</label><input type="text" class="form-control" v-model.trim="edit.doc_id"></div>
+              <div class="col-md-12"><label class="form-label">Dirección</label><input type="text" class="form-control" v-model.trim="edit.address"></div>
+              <div class="col-md-12"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="edit.note"></div>
+            </template>
+
+            <!-- TOTP -->
+            <template v-if="edit.type==='totp'">
+              <div class="col-md-3"><label class="form-label">Issuer</label><input type="text" class="form-control" v-model.trim="edit.issuer"></div>
+              <div class="col-md-3"><label class="form-label">Cuenta</label><input type="text" class="form-control" v-model.trim="edit.account"></div>
+              <div class="col-md-3"><label class="form-label">Secreto (Base32)</label><input type="text" class="form-control" v-model.trim="edit.secret"></div>
+              <div class="col-md-1"><label class="form-label">Digits</label><input type="number" min="6" max="8" class="form-control" v-model.number="edit.digits"></div>
+              <div class="col-md-1"><label class="form-label">Periodo</label><input type="number" min="15" max="60" class="form-control" v-model.number="edit.period"></div>
+              <div class="col-md-1"><label class="form-label">Alg</label>
+                <select class="form-select" v-model="edit.algorithm">
+                  <option>SHA1</option>
+                  <option>SHA256</option>
+                  <option>SHA512</option>
+                </select>
+              </div>
+            </template>
+
+            <!-- SSH/PGP -->
+            <template v-if="edit.type==='ssh'">
+              <div class="col-md-6"><label class="form-label">Private Key</label><textarea class="form-control" rows="3" v-model="edit.private_key"></textarea></div>
+              <div class="col-md-6"><label class="form-label">Public Key</label><textarea class="form-control" rows="3" v-model="edit.public_key"></textarea></div>
+              <div class="col-md-12"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="edit.note"></div>
+            </template>
+            <template v-if="edit.type==='pgp'">
+              <div class="col-md-6"><label class="form-label">Private Key</label><textarea class="form-control" rows="3" v-model="edit.private_key"></textarea></div>
+              <div class="col-md-6"><label class="form-label">Public Key</label><textarea class="form-control" rows="3" v-model="edit.public_key"></textarea></div>
+              <div class="col-md-12"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="edit.note"></div>
+            </template>
+
+            <!-- FILES -->
+            <template v-if="edit.type==='file'">
+              <div class="col-md-6"><label class="form-label">Archivo(s)</label><input type="file" class="form-control" multiple @change="onEditFilesChange"></div>
+              <div class="col-md-3"><label class="form-label">Etiqueta</label><input type="text" class="form-control" v-model.trim="edit.label"></div>
+              <div class="col-md-3"><label class="form-label">Nota</label><input type="text" class="form-control" v-model="edit.note"></div>
+              <div class="col-12"><div class="form-text">Para actualizar archivos debes volver a subirlos; se creará un nuevo elemento y se eliminará el actual.</div></div>
+            </template>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="button" class="btn btn-primary" @click="saveEdit"><i class="fa-solid fa-save"></i> Guardar cambios</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lista de elementos -->
+  <div>
+    <h5 class="mb-3">Elementos</h5>
+    <div v-if="loading" class="alert alert-info">Cargando tus elementos...</div>
+    <div v-else-if="items.length===0" class="text-muted">No hay elementos.</div>
+    <div class="row g-3">
+      <div class="col-12 col-md-6 col-lg-4" v-for="it in filteredItems" :key="it._id">
+        <div class="card h-100 vault-item-card clickable-card" :data-item-id="it._id">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start">
+              <div>
+                <h5 class="card-title mb-0">
+                  <span v-text="displayTitle(it)"></span>
+                  <span class="ms-2 badge bg-secondary" v-text="it.type"></span>
+                  <span class="ms-2 badge bg-info text-dark" v-if="it.is_encrypted && it.meta && it.meta.server">cifrado servidor</span>
+                  <span class="ms-2 badge bg-warning text-dark" v-else-if="it.is_encrypted">cifrado local</span>
+                </h5>
+              </div>
+            </div>
+
+            <div class="mt-2">
+              <!-- Plaintext rendering per type -->
+              <template v-if="!it.is_encrypted">
+                <template v-if="it.type==='password'">
+                  <div class="mb-1"><span class="text-muted">Usuario:</span> <code v-text="it.username"></code></div>
+                  <div class="mb-1"><span class="text-muted">Password:</span> <code v-text="it.password"></code></div>
+                  <div class="mb-2"><span class="text-muted">Nota:</span> <span v-text="it.note || '—'"></span></div>
+                </template>
+                <template v-else-if="it.type==='note'">
+                  <div class="mb-2" v-text="it.note"></div>
+                </template>
+                <template v-else-if="it.type==='token'">
+                  <div class="mb-1"><span class="text-muted">Token:</span> <code v-text="it.token"></code></div>
+                  <div class="mb-2"><span class="text-muted">Etiqueta:</span> <span v-text="it.label || '—'"></span></div>
+                </template>
+                <template v-else-if="it.type==='file'">
+                  <div class="text-muted small">Archivos:</div>
+                  <ul class="list-unstyled mb-0">
+                    <li v-for="f in (it.files||[])" :key="f.gfs_id">
+                      <i class="fa-regular fa-file"></i>
+                      <a :href="f.download_url" :download="f.filename" v-text="f.filename"></a>
+                      <span class="text-muted small" v-if="f.length"> (<span v-text="f.length"></span> bytes)</span>
+                    </li>
+                  </ul>
+                </template>
+                <!-- URL common for plaintext -->
+                <div class="mt-2" v-if="it.url">
+                  <span class="text-muted">URL:</span>
+                  <a :href="normalizeUrl(it.url)" target="_blank" rel="noopener" v-text="domainOf(it.url)"></a>
+                </div>
+                <!-- others plaintext omitted for brevity -->
+              </template>
+
+              <!-- Encrypted rendering: require decryption -->
+              <template v-else>
+                <div class="mb-2 text-muted">Contenido cifrado.</div>
+                <div v-if="it._dec">
+                  <template v-if="it.type==='password'">
+                    <div class="mb-1"><span class="text-muted">Usuario:</span> <code v-text="it._dec.username"></code></div>
+                    <div class="mb-1"><span class="text-muted">Password:</span> <code v-text="it._dec.password"></code></div>
+                    <div class="mb-2"><span class="text-muted">Nota:</span> <span v-text="it._dec.note || '—'"></span></div>
+                  </template>
+                  <template v-else-if="it.type==='note'">
+                    <div class="mb-2" v-text="it._dec.note"></div>
+                  </template>
+                  <template v-else-if="it.type==='token'">
+                    <div class="mb-1"><span class="text-muted">Token:</span> <code v-text="it._dec.token"></code></div>
+                    <div class="mb-2"><span class="text-muted">Etiqueta:</span> <span v-text="it._dec.label || '—'"></span></div>
+                  </template>
+                  <template v-else-if="it.type==='file'">
+                    <div class="mb-2"><span class="text-muted">Etiqueta:</span> <span v-text="it._dec.label || '—'"></span></div>
+                    <div class="mb-2"><span class="text-muted">Nota:</span> <span v-text="it._dec.note || '—'"></span></div>
+                    <div class="text-muted small">Archivos:</div>
+                    <ul class="list-unstyled mb-0">
+                      <li v-for="f in (it.files||[])" :key="f.gfs_id">
+                        <i class="fa-regular fa-file"></i>
+                        <a href="#" @click.prevent="handleFileDownload(it, f)" v-text="f.filename"></a>
+                        <i class="fa-solid fa-lock ms-1" title="Archivo cifrado" v-if="f.encrypted"></i>
+                        <span class="text-muted small" v-if="f.length"> (<span v-text="f.length"></span> bytes)</span>
+                      </li>
+                    </ul>
+                  </template>
+                  <template v-else-if="it.type==='totp'">
+                    <div class="mb-2"><span class="text-muted">Cuenta:</span> <span v-text="(it._dec.issuer||'') + (it._dec.account? (' / '+it._dec.account):'')"></span></div>
+                    <div class="display-6" v-text="totpCodeFor(it)"></div>
+                    <div class="small text-muted">Actualiza cada <span v-text="it._dec.period||30"></span>s</div>
+                  </template>
+                  <template v-else>
+                    <pre class="small bg-light p-2" style="white-space: pre-wrap; word-break: break-word;" v-text="pretty(it._dec)"></pre>
+                  </template>
+                  <!-- URL common for decrypted -->
+                  <div class="mt-2" v-if="it._dec && it._dec.url">
+                    <span class="text-muted">URL:</span>
+                    <a :href="normalizeUrl(it._dec.url)" target="_blank" rel="noopener" v-text="domainOf(it._dec.url)"></a>
+                  </div>
+                </div>
+                <div v-else>
+                  <button v-if="it.meta && it.meta.server" class="btn btn-sm btn-outline-primary" @click="revealServer(it)"><i class="fa-solid fa-eye"></i> Revelar</button>
+                  <button v-else class="btn btn-sm btn-outline-primary" @click="decryptItem(it)"><i class="fa-solid fa-unlock-keyhole"></i> Desencriptar</button>
+                </div>
+              </template>
+            </div>
+
+            <div class="mt-auto d-flex justify-content-between align-items-center">
+              {% if debug_mode %}
+              <div class="text-muted small" v-text="it._id"></div>
+              {% endif %}
+              <div>
+                <button class="btn btn-sm btn-outline-dark me-2" @click="openEdit(it)"><i class="fa-solid fa-pen"></i> Editar</button>
+                <button class="btn btn-sm btn-outline-danger" @click="deleteItem(it)"><i class="fa-solid fa-trash"></i> Eliminar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  const createApp = Vue.createApp;
+  const userLocalKey = JSON.parse('{{ user_local_key | tojson if user_local_key is defined else "false" }}');
+
+  // Small helpers
+  function toB32Map(){
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    const map = {}; for (let i=0;i<alphabet.length;i++){ map[alphabet[i]] = i; }
+    return map;
+  }
+  const B32MAP = toB32Map();
+  function base32ToBytes(str){
+    if (!str) return new Uint8Array();
+    let clean = String(str).toUpperCase().replace(/[^A-Z2-7]/g, '');
+    let bits = '';
+    for (let ch of clean){
+      let val = B32MAP[ch]; if (val===undefined) continue; // skip invalid
+      bits += val.toString(2).padStart(5,'0');
+    }
+    const bytes = [];
+    for (let i=0; i+8 <= bits.length; i+=8){ bytes.push(parseInt(bits.slice(i,i+8),2)); }
+    return new Uint8Array(bytes);
+  }
+  async function hotp(secretBytes, counter, algo){
+    const buf = new ArrayBuffer(8);
+    const view = new DataView(buf);
+    // counter is big-endian
+    const hi = Math.floor(counter / 0x100000000);
+    const lo = counter >>> 0;
+    view.setUint32(0, hi);
+    view.setUint32(4, lo);
+    const key = await crypto.subtle.importKey('raw', secretBytes, { name: 'HMAC', hash: { name: algo || 'SHA-1' } }, false, ['sign']);
+    const hmac = await crypto.subtle.sign('HMAC', key, buf);
+    const h = new Uint8Array(hmac);
+    const offset = h[h.length-1] & 0x0f;
+    const code = ((h[offset] & 0x7f)<<24) | (h[offset+1]<<16) | (h[offset+2]<<8) | (h[offset+3]);
+    return code;
+  }
+  async function totp(secretB32, digits, period, algorithm){
+    try{
+      const step = Math.max(15, parseInt(period||30,10));
+      const d = new Date();
+      const counter = Math.floor(d.getTime()/1000/step);
+      const algo = (algorithm||'SHA1').toUpperCase().replace('SHA','SHA-');
+      const sec = base32ToBytes(secretB32);
+      const code = await hotp(sec, counter, algo);
+      const mod = 10 ** Math.min(8, Math.max(6, parseInt(digits||6,10)));
+      return String(code % mod).padStart(String(mod-1).length,'0');
+    }catch(e){ return '------'; }
+  }
+
+  createApp({
+    data(){
+      return {
+        items: [],
+        loading: true,
+        form: {
+          type: 'password', title: '', username: '', password: '', note: '',
+          token: '', label: '', url: '',
+          brand: '', name: '', number: '', exp_month: '', exp_year: '', cvc: '',
+          full_name: '', email: '', phone: '', address: '', doc_id: '',
+          issuer: '', account: '', secret: '', digits: 6, period: 30, algorithm: 'SHA1',
+          private_key: '', public_key: '',
+          files: []
+        },
+        showPass: false,
+        userLocalKey: !!userLocalKey,
+        // Consider LocalCrypto readiness regardless of the account flag
+        localReady: (window.LocalCrypto && window.LocalCrypto.isReady()) || false,
+        search: { type: 'all', query: '' },
+        totpUrl: '',
+        // Edit modal state
+        edit: { id:'', type:'', title:'', username:'', password:'', note:'', token:'', label:'', url:'', brand:'', name:'', number:'', exp_month:'', exp_year:'', cvc:'', full_name:'', email:'', phone:'', address:'', doc_id:'', issuer:'', account:'', secret:'', digits:6, period:30, algorithm:'SHA1', private_key:'', public_key:'', files:[] },
+        editShowPass: false,
+      };
+    },
+    mounted(){
+      this.bootstrap();
+      const self = this;
+      document.addEventListener('local-crypto-ready', function(){ self.localReady = true; self.tryAutoDecrypt(); });
+      document.addEventListener('local-crypto-cleared', function(){ self.localReady = false; self.items.forEach(function(it){ delete it._dec; }); });
+      // periodic TOTP refresh
+      setInterval(()=>{ self.$forceUpdate(); }, 1000);
+      // Reset create form on modal open
+      try{
+        var newEl = document.getElementById('newItemModal');
+        if (newEl){ newEl.addEventListener('show.bs.modal', function(){
+          self.form = { type: 'password', title:'', username:'', password:'', note:'', token:'', label:'', url:'', brand:'', name:'', number:'', exp_month:'', exp_year:'', cvc:'', full_name:'', email:'', phone:'', address:'', doc_id:'', issuer:'', account:'', secret:'', digits:6, period:30, algorithm:'SHA1', private_key:'', public_key:'', files:[] };
+          self.showPass = false; self.totpUrl='';
+        }); }
+      }catch(e){}
+      // Delegated click for opening items by clicking on card
+      try{
+        const root = document.getElementById('vaultApp');
+        if (root){
+          root.addEventListener('click', (ev)=>{
+            const interactive = ev.target.closest('a,button,.btn,input,select,textarea,label,[data-action]');
+            if (interactive) return;
+            const card = ev.target.closest('.vault-item-card');
+            if (card && card.dataset && card.dataset.itemId){
+              const id = card.dataset.itemId;
+              const it = (this.items||[]).find(x => x && x._id === id);
+              if (it) this.openEdit(it);
+            }
+          });
+        }
+      }catch(e){}
+    },
+    computed: {
+      filteredItems(){
+        // Server-side filtering already applied for plaintext fields.
+        // Here apply client-side search over decrypted content as well.
+        const q = (this.search.query || '').trim().toLowerCase();
+        if (!q) return this.items;
+        const res = [];
+        for (const it of this.items){
+          if (!it) continue;
+          // If plaintext item, it already passed server filter; include it.
+          if (!it.is_encrypted) { res.push(it); continue; }
+          // Encrypted: include only if decrypted and matches some field
+          if (it._dec){
+            const fields = [];
+            const add = v => { if (typeof v === 'string' && v) fields.push(v.toLowerCase()); };
+            const d = it._dec || {};
+            ['title','label','username','password','note','token','full_name','email','phone','address','doc_id','issuer','account','secret','url'].forEach(k=> add(d[k]));
+            const hay = fields.join(' ');
+            if (hay && hay.indexOf(q) !== -1) res.push(it);
+          }
+        }
+        return res;
+      }
+    },
+    methods: {
+      pretty(o){ try{ return JSON.stringify(o, null, 2); }catch(e){ return String(o); } },
+      displayTitle(it){
+        if (!it) return '';
+        if (!it.is_encrypted){ return it.title || it.label || it.type; }
+        if (it._dec){ return it._dec.title || it._dec.label || it.type; }
+        return it.type;
+      },
+      normalizeUrl(u){
+        try{
+          if (!u) return '#';
+          let str = String(u).trim();
+          if (!/^https?:\/\//i.test(str)) str = 'https://' + str;
+          const url = new URL(str);
+          return url.toString();
+        }catch(e){
+          return String(u || '#');
+        }
+      },
+      domainOf(u){
+        try{
+          if (!u) return '';
+          let str = String(u).trim();
+          if (!/^https?:\/\//i.test(str)) str = 'https://' + str;
+          const url = new URL(str);
+          return url.host; // includes subdomain and port if any
+        }catch(e){
+          // Fallback: strip path manually
+          try{
+            const noProto = String(u).replace(/^https?:\/\//i,'');
+            return noProto.split('/')[0];
+          }catch(_){ return String(u); }
+        }
+      },
+      ensureReady(){
+        if (this.localReady) return true;
+        toastError('Configura tu semilla primero');
+        try{ var modalEl = document.getElementById('localCryptoModal'); if (modalEl){ bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop:'static', keyboard:false }).show(); } }catch(e){}
+        return false;
+      },
+      async bootstrap(){
+        try{
+          await this.fetchItems();
+        }finally{ this.loading = false; }
+      },
+      async fetchItems(){
+        try{
+          const params = { type: this.search.type || 'all', q: this.search.query || '' };
+          const { data } = await axios.get('/vault/api', { params });
+          this.items = Array.isArray(data.items) ? data.items : [];
+          await this.tryAutoDecrypt();
+        }catch(e){ toastError(e?.response?.data?.error || 'No se pudieron cargar'); }
+      },
+      async tryAutoDecrypt(){
+        if (!this.localReady) return;
+        for (const it of this.items){
+          try{
+            if (it && it.payload_b64 && !it._dec && !(it.meta && it.meta.server)){
+              it._dec = await LocalCrypto.decryptJSON(it.payload_b64, it.meta);
+            }
+          }catch(_){ }
+        }
+      },
+      onFilesChange(e){ this.form.files = Array.from(e.target.files||[]); },
+      async createItem(){
+        try{
+          const t = this.form.type;
+          if (t==='file'){
+            if (!this.form.files || this.form.files.length===0){ toastError('Seleccione al menos un archivo'); return; }
+            const fd = new FormData();
+            fd.append('type', 'file');
+            if (this.localReady){
+              if (!this.ensureReady()) return;
+              const payload = { label: (this.form.label||'').trim() || null, note: this.form.note || null, title: (this.form.title||'').trim() || null, url: (this.form.url||'').trim() || null };
+              const pack = await LocalCrypto.encryptJSON(payload);
+              fd.append('encrypted','true');
+              fd.append('cred_payload_b64', pack.payload_b64);
+              fd.append('cred_meta', JSON.stringify(pack.meta));
+              const metas = [];
+              for (const f of this.form.files){
+                const buf = new Uint8Array(await f.arrayBuffer());
+                const enc = await LocalCrypto.encryptBytes(buf);
+                metas.push(Object.assign({}, enc.meta, { original_mime: f.type || 'application/octet-stream' }));
+                const blob = new Blob([enc.bytes], { type:'application/octet-stream' });
+                fd.append('files', blob, f.name);
+              }
+              fd.append('enc_meta_list', JSON.stringify(metas));
+            } // else: send plaintext files and metadata; server will encrypt
+            await axios.post('/vault/upload', fd, { headers: { 'Content-Type':'multipart/form-data' } });
+            toastSuccess('Archivo(s) subidos');
+            this.form.files = []; this.form.label=''; this.form.note=''; this.form.title=''; this.form.url='';
+            document.querySelectorAll('#vaultApp input[type="file"]').forEach(inp=> inp.value='');
+          } else {
+            // Build body for non-file types
+            if (this.localReady){
+              if (!this.ensureReady()) return;
+              const payload = Object.assign({}, this.form);
+              delete payload.type; delete payload.files;
+              const pack = await LocalCrypto.encryptJSON(payload);
+              await axios.post('/vault/items/encrypted', { type: t, payload_b64: pack.payload_b64, meta: pack.meta });
+            } else {
+              const body = Object.assign({}, this.form);
+              delete body.files;
+              await axios.post('/vault/items', body); // backend will encrypt server-side
+            }
+            toastSuccess('Elemento guardado');
+            // reset some fields
+            const keepType = this.form.type; this.form = { type: keepType, title:'', username:'', password:'', note:'', token:'', label:'', url:'', brand:'', name:'', number:'', exp_month:'', exp_year:'', cvc:'', full_name:'', email:'', phone:'', address:'', doc_id:'', issuer:'', account:'', secret:'', digits:6, period:30, algorithm:'SHA1', private_key:'', public_key:'', files:[] };
+          }
+          await this.fetchItems();
+          try{ var el = document.getElementById('newItemModal'); if (el){ var m = bootstrap.Modal.getInstance(el); m && m.hide(); } }catch(e){}
+        }catch(e){ toastError(e?.response?.data?.error || 'No se pudo guardar'); }
+      },
+      importOtpAuth(){
+        try{
+          const raw = (this.totpUrl || '').trim();
+          if (!raw || raw.indexOf('otpauth://') !== 0){ toastError('URL otpauth:// inválida'); return; }
+          // Basic parse: otpauth://totp/Label?params
+          const without = raw.replace(/^otpauth:\/\//i, '');
+          const qIdx = without.indexOf('?');
+          const path = qIdx >= 0 ? without.slice(0, qIdx) : without;
+          const qs = qIdx >= 0 ? without.slice(qIdx+1) : '';
+          const firstSlash = path.indexOf('/');
+          const typ = firstSlash >= 0 ? path.slice(0, firstSlash).toLowerCase() : path.toLowerCase();
+          const labelEnc = firstSlash >= 0 ? path.slice(firstSlash+1) : '';
+          if (typ !== 'totp'){ toastError('Solo se admite otpauth TOTP'); return; }
+          let label = decodeURIComponent(labelEnc || '');
+          // Label may be "Issuer:Account"
+          let issuerFromLabel = '';
+          let accountFromLabel = '';
+          if (label.includes(':')){
+            const parts = label.split(':');
+            issuerFromLabel = decodeURIComponent(parts[0] || '').trim();
+            accountFromLabel = decodeURIComponent(parts.slice(1).join(':') || '').trim();
+          } else {
+            accountFromLabel = label;
+          }
+          const params = new URLSearchParams(qs);
+          const secret = (params.get('secret') || '').toUpperCase();
+          const issuerQ = params.get('issuer') || '';
+          const alg = (params.get('algorithm') || 'SHA1').toUpperCase();
+          const digits = parseInt(params.get('digits') || '6', 10) || 6;
+          const period = parseInt(params.get('period') || '30', 10) || 30;
+
+          this.form.type = 'totp';
+          this.form.secret = secret;
+          this.form.algorithm = ['SHA1','SHA256','SHA512'].includes(alg) ? alg : 'SHA1';
+          this.form.digits = Math.min(8, Math.max(6, digits));
+          this.form.period = Math.min(60, Math.max(15, period));
+          // Prefer query issuer, else from label
+          this.form.issuer = (issuerQ || issuerFromLabel || '').trim();
+          this.form.account = (accountFromLabel || '').trim();
+          toastSuccess('TOTP importado');
+        }catch(e){ toastError('No se pudo importar otpauth'); }
+      },
+      async decryptItem(it){
+        if (it && it.meta && it.meta.server){ return this.revealServer(it); }
+        if (!this.ensureReady()) return;
+        try{ if (it && it.payload_b64){ it._dec = await LocalCrypto.decryptJSON(it.payload_b64, it.meta); } }catch(e){ toastError('No se pudo desencriptar'); }
+      },
+      async revealServer(it){
+        try{
+          if (!it || !it._id) return;
+          const { data } = await axios.get(`/vault/items/id/${encodeURIComponent(it._id)}/reveal`);
+          it._dec = data && data.payload ? data.payload : null;
+          if (!it._dec) toastError('No se pudo revelar');
+        }catch(e){ toastError(e?.response?.data?.error || 'No se pudo revelar'); }
+      },
+      async handleFileDownload(it, f){
+        if (!f || !f.encrypted){ window.location.href = f.download_url; return; }
+        // If server-encrypted, backend will decrypt on the fly
+        if (f.enc_meta && f.enc_meta.server){ window.location.href = f.download_url; return; }
+        if (!this.ensureReady()) return;
+        try{
+          const resp = await fetch(f.download_url, { credentials:'include' });
+          if (!resp.ok){ toastError('No se pudo descargar el archivo'); return; }
+          const cipher = new Uint8Array(await resp.arrayBuffer());
+          const meta = f.enc_meta || {};
+          const plain = await LocalCrypto.decryptBytes(cipher, meta);
+          const mime = meta.original_mime || f.content_type || 'application/octet-stream';
+          const blob = new Blob([plain], { type: mime });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a'); a.href = url; a.download = f.filename || 'archivo'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+        }catch(e){ toastError('No se pudo desencriptar el archivo'); }
+      },
+      totpCodeFor(it){
+        try{
+          const src = it._dec || {}; if (!src.secret) return '------';
+          const step = Math.max(15, parseInt(src.period||30,10));
+          const nowCounter = Math.floor((Date.now()/1000)/step);
+          if (!it._lastTotp || it._lastTotp.t !== nowCounter){
+            // trigger async recompute without returning a Promise
+            totp(src.secret, src.digits||6, src.period||30, src.algorithm||'SHA1').then(code=>{
+              it._lastTotp = { t: nowCounter, code: code };
+              try{ this.$forceUpdate(); }catch(_){ }
+            });
+          }
+          return (it._lastTotp && it._lastTotp.code) ? it._lastTotp.code : '------';
+        }catch(e){ return '------'; }
+      },
+      async deleteItem(it){
+        const ok = confirm('¿Eliminar este elemento?'); if (!ok) return;
+        try{ await axios.delete(`/vault/items/id/${encodeURIComponent(it._id)}`); toastSuccess('Eliminado'); await this.fetchItems(); }catch(e){ toastError(e?.response?.data?.error || 'No se pudo eliminar'); }
+      },
+      openEdit(it){
+        try{
+          const type = it.type || 'password';
+          this.edit = { id: it._id, type: type, title:'', username:'', password:'', note:'', token:'', label:'', brand:'', name:'', number:'', exp_month:'', exp_year:'', cvc:'', full_name:'', email:'', phone:'', address:'', doc_id:'', issuer:'', account:'', secret:'', digits:6, period:30, algorithm:'SHA1', private_key:'', public_key:'', files:[] };
+          this.editShowPass = false;
+          const src = it.is_encrypted ? (it._dec || {}) : it;
+          if (it.is_encrypted && !it._dec){ toastError('Primero desencripta el elemento'); return; }
+          // map fields
+          const copy = (k)=>{ if (src && (src[k]!==undefined)) this.edit[k] = src[k]; };
+          ['title','username','password','note','token','label','url','brand','name','number','exp_month','exp_year','cvc','full_name','email','phone','address','doc_id','issuer','account','secret','digits','period','algorithm','private_key','public_key'].forEach(copy);
+          const el = document.getElementById('editItemModal'); if (el){ bootstrap.Modal.getOrCreateInstance(el).show(); }
+        }catch(e){ toastError('No se pudo abrir el editor'); }
+      },
+      onEditFilesChange(e){ this.edit.files = Array.from(e.target.files||[]); },
+      async saveEdit(){
+        try{
+          const id = this.edit.id; const type = this.edit.type || 'password';
+          const it = (this.items||[]).find(x=> x._id === id);
+          if (!it){ toastError('Elemento no encontrado'); return; }
+          if (type === 'file'){
+            if (!this.edit.files || this.edit.files.length===0){ toastError('Vuelve a subir los archivos'); return; }
+            const fd = new FormData(); fd.append('type','file');
+            if (this.localReady){
+              if (!this.ensureReady()) return;
+              const payload = { label: (this.edit.label||'').trim() || null, note: this.edit.note || null, title: (this.edit.title||'').trim() || null };
+              const pack = await LocalCrypto.encryptJSON(payload);
+              fd.append('encrypted','true'); fd.append('cred_payload_b64', pack.payload_b64); fd.append('cred_meta', JSON.stringify(pack.meta));
+              const metas = [];
+              for (const f of this.edit.files){
+                const buf = new Uint8Array(await f.arrayBuffer());
+                const enc = await LocalCrypto.encryptBytes(buf);
+                metas.push(Object.assign({}, enc.meta, { original_mime: f.type || 'application/octet-stream' }));
+                const blob = new Blob([enc.bytes], { type:'application/octet-stream' });
+                fd.append('files', blob, f.name);
+              }
+              fd.append('enc_meta_list', JSON.stringify(metas));
+            }
+            await axios.post('/vault/upload', fd, { headers: { 'Content-Type':'multipart/form-data' } });
+            await axios.delete(`/vault/items/id/${encodeURIComponent(id)}`);
+          } else {
+            // build payload
+            const payload = {};
+            const keys = ['title','username','password','note','token','label','url','brand','name','number','exp_month','exp_year','cvc','full_name','email','phone','address','doc_id','issuer','account','secret','digits','period','algorithm','private_key','public_key'];
+            keys.forEach(k=>{ if (this.edit[k] !== undefined) payload[k] = this.edit[k]; });
+            if (this.localReady){
+              if (!this.ensureReady()) return;
+              const pack = await LocalCrypto.encryptJSON(Object.assign({}, payload));
+              await axios.post('/vault/items/encrypted', { type: type, payload_b64: pack.payload_b64, meta: pack.meta });
+            } else {
+              payload.type = type;
+              await axios.post('/vault/items', payload); // backend will encrypt server-side
+            }
+            await axios.delete(`/vault/items/id/${encodeURIComponent(id)}`);
+          }
+          toastSuccess('Elemento actualizado');
+          try{ var el2 = document.getElementById('editItemModal'); if (el2){ var m2 = bootstrap.Modal.getInstance(el2); m2 && m2.hide(); } }catch(e){}
+          await this.fetchItems();
+        }catch(e){ toastError(e?.response?.data?.error || 'No se pudieron guardar los cambios'); }
+      }
+    }
+  }).mount('#vaultApp');
+})();
+</script>
+{% endblock %}

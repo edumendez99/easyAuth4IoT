@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Login{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="card-title mb-0">Login</h4>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-danger d-none" id="loginError"></div>
+                    
+                    <form id="loginForm" class="needs-validation" novalidate>
+                        <div class="mb-3">
+                            <label for="username" class="form-label">Username or Email</label>
+                            <input type="text" class="form-control" id="username" name="username" required>
+                            <div class="invalid-feedback">Please enter your username or email</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="password" class="form-label">Password</label>
+                            <input type="password" class="form-control" id="password" name="password" required>
+                            <div class="invalid-feedback">Please enter your password</div>
+                        </div>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-sign-in-alt me-2"></i>Login
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('loginForm');
+    const errorAlert = document.getElementById('loginError');
+    
+    form.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        // Hide any previous error
+        errorAlert.classList.add('d-none');
+        
+        // Get form data
+        const data = {
+            identifier: document.getElementById('username').value, // Using identifier for either username or email
+            password: document.getElementById('password').value
+        };
+        
+        try {
+            const response = await fetch('/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok) {
+                // Store token if needed
+                if (result.token) {
+                    localStorage.setItem('token', result.token);
+                }
+                // Redirect to home page
+                window.location.href = '/';
+            } else {
+                errorAlert.textContent = result.error || 'Login failed';
+                errorAlert.classList.remove('d-none');
+            }
+        } catch (error) {
+            errorAlert.textContent = 'An error occurred during login';
+            errorAlert.classList.remove('d-none');
+        }
+    });
+});
+</script>
+{% endblock %}

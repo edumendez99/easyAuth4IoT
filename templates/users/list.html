@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Users{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">Users</h2>
+        <a href="{{ url_for('auth.register_page') }}" class="btn btn-primary">
+            <i class="fas fa-user-plus me-2"></i>Add User
+        </a>
+    </div>
+
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Local Key</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.email }}</td>
+                            <td>
+                                <span class="badge bg-{{ 'danger' if user.role == 'admin' else 'info' if user.role == 'staff' else 'secondary' }}">
+                                    {{ user.role }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" 
+                                           {{ 'checked' if user.is_active else '' }}
+                                           onchange="updateUserStatus('{{ user._id }}', this.checked)"
+                                           {{ 'disabled' if user._id == current_user.get_id() }}>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox"
+                                           {{ 'checked' if user.local_key else '' }}
+                                           onchange="updateUserLocalKey('{{ user._id }}', this.checked)"
+                                           {{ 'disabled' if user._id == current_user.get_id() }}>
+                                </div>
+                            </td>
+                            <td>{{ user.created_at.strftime('%Y-%m-%d %H:%M') if user.created_at else 'N/A' }}</td>
+                            <td>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-outline-danger" 
+                                            onclick="deleteUser('{{ user._id }}')"
+                                            {{ 'disabled' if user._id == current_user.get_id() }}>
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function updateUserStatus(userId, isActive) {
+    try {
+        const response = await fetch(`/users/${userId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ is_active: isActive })
+        });
+        
+        if (!response.ok) {
+            const result = await response.json();
+            alert(result.error || 'Failed to update user status');
+            window.location.reload();
+        }
+    } catch (error) {
+        alert('An error occurred while updating user status');
+        window.location.reload();
+    }
+}
+
+async function deleteUser(userId) {
+    if (!confirm('Are you sure you want to delete this user?')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/users/${userId}`, {
+            method: 'DELETE'
+        });
+        
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            const result = await response.json();
+            alert(result.error || 'Failed to delete user');
+        }
+    } catch (error) {
+        alert('An error occurred while deleting user');
+    }
+}
+
+async function updateUserLocalKey(userId, localKey) {
+    try {
+        const response = await fetch(`/users/${userId}/local-key`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ local_key: localKey })
+        });
+
+        if (!response.ok) {
+            const result = await response.json();
+            alert(result.error || 'Failed to update local key flag');
+            window.location.reload();
+        }
+    } catch (error) {
+        alert('An error occurred while updating local key flag');
+        window.location.reload();
+    }
+}
+</script>
+{% endblock %}
