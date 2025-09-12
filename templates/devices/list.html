@@ -1,0 +1,702 @@
+{% extends 'base.html' %}
+{% block title %}Dispositivos{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="fa-solid fa-microchip"></i> Dispositivos</h2>
+    <div class="d-flex align-items-center gap-2">
+      <div class="position-relative" style="max-width: 360px; width: 100%;">
+        <input type="text" id="deviceSearchInput" class="form-control" placeholder="Buscar por nombre, fabricante, país, red o usuario...">
+        <div id="deviceSuggestBox" class="list-group position-absolute w-100 shadow" style="z-index: 1000; max-height: 260px; overflow:auto; display:none;"></div>
+      </div>
+      {% if current_user.role in ['admin','staff'] %}
+      <button class="btn btn-primary" id="btnNewDevice">
+        <i class="fa-solid fa-plus"></i> Nuevo dispositivo
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  <div id="devicesGrid" class="row g-3"></div>
+</div>
+
+<!-- Modal de credenciales eliminado: ahora se usa página dedicada /devices/<id>/credentials/manage -->
+
+<!-- Modal Editar Dispositivo -->
+<div class="modal fade" id="editDeviceModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Editar dispositivo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Nombre<span class="text-danger"> *</span></label>
+            <input type="text" id="edName" class="form-control" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Fabricante</label>
+            <input type="text" id="edManufacturer" class="form-control">
+          </div>
+          {% if current_user.role == 'admin' %}
+          <div class="col-md-6">
+            <label class="form-label">Owner username (staff)</label>
+            <input type="text" id="edOwnerUsername" class="form-control" placeholder="staff_username">
+            <div class="form-text">Solo admins pueden cambiar el owner.</div>
+          </div>
+          {% endif %}
+          <div class="col-md-6">
+            <label class="form-label">País de fabricación</label>
+            <select id="edCountry" class="form-select">
+              <option value="">Selecciona un país...</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Código de barras</label>
+            <input type="text" id="edBarcode" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Número de serie</label>
+            <input type="text" id="edSerial" class="form-control">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Redes</label>
+            <div class="d-flex flex-wrap gap-3" id="edNetworks">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="WiFi" id="edNetWiFi">
+                <label class="form-check-label" for="edNetWiFi">WiFi</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="LoRaWAN" id="edNetLoRa">
+                <label class="form-check-label" for="edNetLoRa">LoRaWAN</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="Bluetooth" id="edNetBt">
+                <label class="form-check-label" for="edNetBt">Bluetooth</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="3G/4G" id="edNet4G">
+                <label class="form-check-label" for="edNet4G">3G/4G</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="NB-IoT" id="edNetNBIoT">
+                <label class="form-check-label" for="edNetNBIoT">NB-IoT</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="LTE-M" id="edNetLTEM">
+                <label class="form-check-label" for="edNetLTEM">LTE-M</label>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Descripción</label>
+            <textarea id="edDescription" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmEdit">Guardar cambios</button>
+      </div>
+    </div>
+  </div>
+  
+</div>
+<!-- Modal Asignación -->
+<div class="modal fade" id="assignModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Asignar usuarios a <span id="assignDeviceName"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Buscar usuarios</label>
+            <input type="text" class="form-control" id="userSearchInput" placeholder="Buscar por username...">
+            <div id="userSearchResults" class="list-group mt-2" style="max-height: 240px; overflow:auto;"></div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Usuarios asignados</label>
+            <div id="assignedUsersList" class="list-group"></div>
+            <div class="form-text">Usa “Asignar” para añadir desde resultados o “Quitar” para remover.</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmAssign">Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Crear Dispositivo -->
+<div class="modal fade" id="createDeviceModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Nuevo dispositivo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Nombre<span class="text-danger"> *</span></label>
+            <input type="text" id="cdName" class="form-control" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Fabricante</label>
+            <input type="text" id="cdManufacturer" class="form-control">
+          </div>
+          {% if current_user.role == 'admin' %}
+          <div class="col-md-6">
+            <label class="form-label">Owner username (staff)</label>
+            <input type="text" id="cdOwnerUsername" class="form-control" placeholder="staff_username">
+            <div class="form-text">Requerido si eres admin.</div>
+          </div>
+          {% endif %}
+          <div class="col-md-6">
+            <label class="form-label">País de fabricación</label>
+            <select id="cdCountry" class="form-select">
+              <option value="">Selecciona un país...</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Código de barras</label>
+            <input type="text" id="cdBarcode" class="form-control">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Número de serie</label>
+            <input type="text" id="cdSerial" class="form-control">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Redes</label>
+            <div class="d-flex flex-wrap gap-3" id="cdNetworks">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="WiFi" id="cdNetWiFi">
+                <label class="form-check-label" for="cdNetWiFi">WiFi</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="LoRaWAN" id="cdNetLoRa">
+                <label class="form-check-label" for="cdNetLoRa">LoRaWAN</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="Bluetooth" id="cdNetBt">
+                <label class="form-check-label" for="cdNetBt">Bluetooth</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="3G/4G" id="cdNet4G">
+                <label class="form-check-label" for="cdNet4G">3G/4G</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="NB-IoT" id="cdNetNBIoT">
+                <label class="form-check-label" for="cdNetNBIoT">NB-IoT</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="LTE-M" id="cdNetLTEM">
+                <label class="form-check-label" for="cdNetLTEM">LTE-M</label>
+              </div>
+            </div>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Descripción</label>
+            <textarea id="cdDescription" class="form-control" rows="2"></textarea>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Usernames asignados (opcional, separados por coma)</label>
+            <input type="text" id="cdAssignedUsernames" class="form-control" placeholder="user1, user2">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="btnConfirmCreate">Crear</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  const role = '{{ current_user.role }}';
+  const myId = '{{ current_user.get_id() }}';
+  let devices = [];
+  let selectedDevice = null;
+  let assignedIds = [];
+  let assignedDetails = [];
+  const COUNTRY_URL = '/static/countries.json';
+  let allCountries = [];
+  async function loadCountries(){
+    try{
+      const { data } = await axios.get(COUNTRY_URL);
+      allCountries = Array.isArray(data) ? data : [];
+      fillCountrySelects();
+    }catch(e){
+      allCountries = [];
+    }
+  }
+  function fillCountrySelects(){
+    const ids = ['edCountry','cdCountry'];
+    ids.forEach(id => {
+      const sel = document.getElementById(id);
+      if (!sel) return;
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Selecciona un país...</option>' +
+        allCountries.map(c => `<option value="${c}">${c}</option>`).join('');
+      if (current){
+        if (![...sel.options].some(o => o.value === current)){
+          const opt = document.createElement('option');
+          opt.value = current;
+          opt.textContent = current;
+          sel.appendChild(opt);
+        }
+        sel.value = current;
+      }
+    });
+  }
+
+  async function loadDevices(){
+    try{
+      const qEl = document.getElementById('deviceSearchInput');
+      const q = qEl ? qEl.value.trim() : '';
+      const params = q ? { params: { q } } : undefined;
+      const { data } = await axios.get('/devices/api', params);
+      devices = data.devices || [];
+      renderGrid();
+    }catch(e){
+      toastError('No se pudieron cargar los dispositivos');
+    }
+  }
+
+  function countAssigned(d){
+    return (d.assigned_users || []).length;
+  }
+
+  function canEdit(d){
+    if (role === 'admin') return true;
+    // staff owner can edit
+    return role === 'staff' && d.owner_id === myId;
+  }
+
+  function assignedMap(){
+    const map = new Map();
+    assignedDetails.forEach(u => map.set(u._id, u));
+    return map;
+  }
+
+  function renderAssignedList(){
+    const list = document.getElementById('assignedUsersList');
+    list.innerHTML = '';
+    const amap = assignedMap();
+    if (!assignedIds.length){
+      list.innerHTML = '<div class="list-group-item text-muted">Sin usuarios asignados</div>';
+      return;
+    }
+    assignedIds.forEach(uid => {
+      const u = amap.get(uid);
+      const name = u ? u.username : uid;
+      const roleTxt = u && u.role ? ` <span class="badge bg-light text-dark ms-2">${u.role}</span>` : '';
+      const item = document.createElement('div');
+      item.className = 'list-group-item d-flex justify-content-between align-items-center';
+      item.innerHTML = `<div><strong>${name}</strong>${roleTxt}</div>
+        <button class="btn btn-sm btn-outline-danger" data-action="remove-assigned" data-user-id="${uid}"><i class="fa-solid fa-user-minus"></i> Quitar</button>`;
+      list.appendChild(item);
+    });
+  }
+
+  async function fetchAssignedDetails(){
+    if (!assignedIds.length){ assignedDetails = []; renderAssignedList(); return; }
+    try{
+      const { data } = await axios.post('/users/api/by-ids', { ids: assignedIds });
+      assignedDetails = data.users || [];
+    }catch(e){
+      assignedDetails = [];
+    }
+    renderAssignedList();
+  }
+
+  let userSearchTimer = null;
+  async function doSearchUsers(q){
+    try{
+      const { data } = await axios.get('/users/api/search', { params: { q, limit: 50 }});
+      renderSearchResults(data.users || []);
+    }catch(e){
+      renderSearchResults([]);
+    }
+  }
+
+  function renderSearchResults(users){
+    const box = document.getElementById('userSearchResults');
+    box.innerHTML = '';
+    if (!users.length){
+      box.innerHTML = '<div class="list-group-item text-muted">Sin resultados</div>';
+      return;
+    }
+    users.forEach(u => {
+      const assigned = assignedIds.includes(u._id);
+      const item = document.createElement('div');
+      item.className = 'list-group-item d-flex justify-content-between align-items-center';
+      item.innerHTML = `<div><strong>${u.username}</strong> <span class="badge bg-light text-dark ms-2">${u.role||''}</span></div>
+        <button class="btn btn-sm ${assigned ? 'btn-outline-secondary' : 'btn-outline-success'}" ${assigned ? 'disabled' : ''}
+          data-action="add-assigned" data-user-id="${u._id}" data-username="${u.username}"><i class="fa-solid fa-user-plus"></i> Asignar</button>`;
+      box.appendChild(item);
+    });
+  }
+
+  function formatNetworks(nets){
+    const arr = Array.isArray(nets) ? nets : [];
+    if (!arr.length) return '<span class="text-muted">—</span>';
+    return arr.map(n => `<span class="badge bg-secondary me-1">${n}</span>`).join('');
+  }
+
+  function renderGrid(){
+    const grid = document.getElementById('devicesGrid');
+    grid.innerHTML = '';
+    devices.forEach(d => {
+      const col = document.createElement('div');
+      col.className = 'col-12 col-md-6 col-lg-4';
+      col.innerHTML = `
+        <div class="card h-100 device-card clickable-card" data-nav-url="/devices/${d._id}/credentials/manage">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h5 class="card-title mb-0">${d.name || ''}</h5>
+              <span class="badge bg-light text-dark">${countAssigned(d)} asignados</span>
+            </div>
+            <div class="mb-2 small text-muted">Owner: ${d.owner_username ? `<strong>${d.owner_username}</strong>` : `<code>${d.owner_id || ''}</code>`}</div>
+            <div class="mb-2">${formatNetworks(d.network_types)}</div>
+            <div class="mb-2 small">
+              ${d.manufacturer ? `<div>Fabricante: <strong>${d.manufacturer}</strong></div>` : ''}
+              ${d.country_of_manufacture ? `<div>País: <strong>${d.country_of_manufacture}</strong></div>` : ''}
+              ${d.barcode ? `<div>Código barras: <code>${d.barcode}</code></div>` : ''}
+              ${d.serial_number ? `<div>Serie: <code>${d.serial_number}</code></div>` : ''}
+              ${d.description ? `<div class="text-truncate" title="${d.description}">${d.description}</div>` : ''}
+            </div>
+            <div class="mt-auto">
+              <a class="btn btn-sm btn-outline-primary me-2" href="/devices/${d._id}/credentials/manage">
+                <i class="fa-solid fa-key"></i> Ver credenciales
+              </a>
+              ${canEdit(d) ? `
+              <button class="btn btn-sm btn-outline-dark me-2" data-action="edit-device" data-id="${d._id}">
+                <i class="fa-solid fa-pen"></i> Editar
+              </button>
+              <button class="btn btn-sm btn-outline-secondary" data-action="assign-users" data-id="${d._id}" data-name="${d.name || ''}">
+                <i class="fa-solid fa-user-plus"></i> Gestionar usuarios
+              </button>
+              <button class="btn btn-sm btn-outline-danger ms-2" data-action="delete-device" data-id="${d._id}" data-name="${d.name || ''}">
+                <i class="fa-solid fa-trash"></i> Eliminar
+              </button>
+              ` : ''}
+            </div>
+          </div>
+        </div>`;
+      grid.appendChild(col);
+    });
+  }
+
+  // Vista de credenciales movida a página dedicada
+
+  function openAssign(deviceId, deviceName){
+    selectedDevice = devices.find(x => x._id === deviceId) || null;
+    document.getElementById('assignDeviceName').textContent = deviceName || '';
+    assignedIds = Array.isArray(selectedDevice?.assigned_users) ? [...selectedDevice.assigned_users] : [];
+    assignedDetails = [];
+    document.getElementById('userSearchInput').value = '';
+    document.getElementById('userSearchResults').innerHTML = '';
+    fetchAssignedDetails();
+    const modal = new bootstrap.Modal(document.getElementById('assignModal'));
+    modal.show();
+  }
+
+  async function confirmAssign(){
+    if(!selectedDevice) return;
+    try{
+      await axios.put(`/devices/${selectedDevice._id}/assign-users`, { assigned_user_ids: assignedIds });
+      toastSuccess('Asignaciones guardadas');
+      bootstrap.Modal.getInstance(document.getElementById('assignModal')).hide();
+      loadDevices();
+    }catch(e){
+      toastError('No se pudo guardar la asignación');
+    }
+  }
+
+  document.addEventListener('click', (ev) => {
+    // Whole-device-card navigation (avoid when clicking buttons/links/inputs)
+    const interactive = ev.target.closest('a,button,.btn,input,select,textarea,label,[data-action]');
+    if (!interactive){
+      const card = ev.target.closest('.device-card');
+      if (card && card.dataset && card.dataset.navUrl){
+        window.location.href = card.dataset.navUrl;
+        return;
+      }
+    }
+    const btn = ev.target.closest('[data-action]');
+    if(!btn) return;
+    const action = btn.getAttribute('data-action');
+    const id = btn.getAttribute('data-id');
+    const name = btn.getAttribute('data-name');
+    if(action === 'edit-device') openEdit(id);
+    if(action === 'assign-users') openAssign(id, name);
+    if(action === 'pick-suggestion'){
+      const value = btn.getAttribute('data-suggest-value') || '';
+      const input = document.getElementById('deviceSearchInput');
+      input.value = value;
+      hideDeviceSuggestions();
+      clearTimeout(deviceSearchTimer);
+      deviceSearchTimer = setTimeout(() => loadDevices(), 10);
+      return; // don't process further
+    }
+    if(action === 'add-assigned'){
+      const uid = btn.getAttribute('data-user-id');
+      const uname = btn.getAttribute('data-username');
+      if (uid && !assignedIds.includes(uid)){
+        assignedIds.push(uid);
+        if (uname) assignedDetails.push({_id: uid, username: uname});
+        renderAssignedList();
+        btn.setAttribute('disabled', 'disabled');
+        btn.classList.remove('btn-outline-success');
+        btn.classList.add('btn-outline-secondary');
+      }
+    }
+    if(action === 'remove-assigned'){
+      const uid = btn.getAttribute('data-user-id');
+      if (!uid) return;
+      assignedIds = assignedIds.filter(x => x !== uid);
+      assignedDetails = assignedDetails.filter(u => u._id !== uid);
+      renderAssignedList();
+      // Also update search button state if visible
+      document.querySelectorAll(`[data-action="add-assigned"][data-user-id="${uid}"]`).forEach(el => {
+        el.removeAttribute('disabled');
+        el.classList.remove('btn-outline-secondary');
+        el.classList.add('btn-outline-success');
+      });
+    }
+  });
+
+  document.getElementById('btnConfirmAssign').addEventListener('click', confirmAssign);
+
+  // Editar dispositivo
+  let editingDevice = null;
+  function setEditNetworks(arr){
+    const set = new Set(Array.isArray(arr) ? arr : []);
+    ['edNetWiFi','edNetLoRa','edNetBt','edNet4G','edNetNBIoT','edNetLTEM']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.checked = set.has(el.value); });
+  }
+  function getEditNetworks(){
+    return ['edNetWiFi','edNetLoRa','edNetBt','edNet4G','edNetNBIoT','edNetLTEM']
+      .map(id => { const el = document.getElementById(id); return el && el.checked ? el.value : null; })
+      .filter(Boolean);
+  }
+  function openEdit(deviceId){
+    editingDevice = devices.find(x => x._id === deviceId) || null;
+    if(!editingDevice) return;
+    document.getElementById('edName').value = editingDevice.name || '';
+    document.getElementById('edManufacturer').value = editingDevice.manufacturer || '';
+    const edOwner = document.getElementById('edOwnerUsername');
+    if (edOwner) edOwner.value = editingDevice.owner_username || '';
+    (function(){
+      const sel = document.getElementById('edCountry');
+      const country = editingDevice.country_of_manufacture || '';
+      if (!sel) return;
+      if (allCountries.length) fillCountrySelects();
+      if (country && ![...sel.options].some(o => o.value === country)){
+        const opt = document.createElement('option');
+        opt.value = country;
+        opt.textContent = country;
+        sel.appendChild(opt);
+      }
+      sel.value = country;
+    })();
+    document.getElementById('edBarcode').value = editingDevice.barcode || '';
+    document.getElementById('edSerial').value = editingDevice.serial_number || '';
+    document.getElementById('edDescription').value = editingDevice.description || '';
+    setEditNetworks(editingDevice.network_types);
+    const modal = new bootstrap.Modal(document.getElementById('editDeviceModal'));
+    modal.show();
+  }
+  async function confirmEdit(){
+    if(!editingDevice) return;
+    const name = document.getElementById('edName').value.trim();
+    if (!name) { toastError('El nombre es obligatorio'); return; }
+    const manufacturer = document.getElementById('edManufacturer').value.trim();
+    const country = document.getElementById('edCountry').value.trim();
+    const barcode = document.getElementById('edBarcode').value.trim();
+    const serial = document.getElementById('edSerial').value.trim();
+    const description = document.getElementById('edDescription').value.trim();
+    const nets = getEditNetworks();
+    const payload = { name };
+    if (manufacturer !== (editingDevice.manufacturer||'')) payload.manufacturer = manufacturer;
+    if (country !== (editingDevice.country_of_manufacture||'')) payload.country_of_manufacture = country;
+    if (barcode !== (editingDevice.barcode||'')) payload.barcode = barcode;
+    if (serial !== (editingDevice.serial_number||'')) payload.serial_number = serial;
+    if (description !== (editingDevice.description||'')) payload.description = description;
+    // compare networks arrays
+    const oldNets = Array.isArray(editingDevice.network_types) ? editingDevice.network_types : [];
+    if (JSON.stringify([...nets].sort()) !== JSON.stringify([...oldNets].sort())) payload.network_types = nets;
+    // admin owner change
+    const edOwner = document.getElementById('edOwnerUsername');
+    if (edOwner){
+      const owner_username = edOwner.value.trim();
+      if (owner_username && owner_username !== (editingDevice.owner_username||'')) payload.owner_username = owner_username;
+    }
+    try{
+      await axios.put(`/devices/api/${editingDevice._id}`, payload);
+      toastSuccess('Dispositivo actualizado');
+      bootstrap.Modal.getInstance(document.getElementById('editDeviceModal')).hide();
+      loadDevices();
+    }catch(e){
+      const msg = e?.response?.data?.error || 'No se pudo actualizar el dispositivo';
+      toastError(msg);
+    }
+  }
+  document.getElementById('btnConfirmEdit').addEventListener('click', confirmEdit);
+
+  // Eliminar dispositivo
+  document.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('[data-action="delete-device"]');
+    if(!btn) return;
+    const id = btn.getAttribute('data-id');
+    const name = btn.getAttribute('data-name') || '';
+    if (!id) return;
+    const ok = confirm(`¿Eliminar el dispositivo "${name}"? Esta acción no se puede deshacer.`);
+    if (!ok) return;
+    try{
+      await axios.delete(`/devices/api/${id}`);
+      toastSuccess('Dispositivo eliminado');
+      loadDevices();
+    }catch(e){
+      const msg = e?.response?.data?.error || 'No se pudo eliminar el dispositivo';
+      toastError(msg);
+    }
+  });
+
+  // Search input debounce
+  // Debounced inputs: user search in modal and device list search
+  let deviceSearchTimer = null;
+  let suggestTimer = null;
+  let currentSuggestions = [];
+  document.addEventListener('input', (ev) => {
+    const el = ev.target;
+    if (el && el.id === 'userSearchInput'){
+      const q = el.value.trim();
+      clearTimeout(userSearchTimer);
+      userSearchTimer = setTimeout(() => doSearchUsers(q), 250);
+    }
+    if (el && el.id === 'deviceSearchInput'){
+      const q = el.value.trim();
+      clearTimeout(deviceSearchTimer);
+      deviceSearchTimer = setTimeout(() => loadDevices(), 250);
+      // suggestions
+      clearTimeout(suggestTimer);
+      suggestTimer = setTimeout(() => fetchDeviceSuggestions(q), 150);
+    }
+  });
+
+  function hideDeviceSuggestions(){
+    const box = document.getElementById('deviceSuggestBox');
+    if (box) box.style.display = 'none';
+  }
+  function showDeviceSuggestions(){
+    const box = document.getElementById('deviceSuggestBox');
+    if (box) box.style.display = 'block';
+  }
+  function renderDeviceSuggestions(list){
+    const box = document.getElementById('deviceSuggestBox');
+    box.innerHTML = '';
+    currentSuggestions = Array.isArray(list) ? list : [];
+    if (!currentSuggestions.length){
+      hideDeviceSuggestions();
+      return;
+    }
+    currentSuggestions.forEach((sug, idx) => {
+      const div = document.createElement('div');
+      div.className = 'list-group-item list-group-item-action';
+      div.setAttribute('data-action', 'pick-suggestion');
+      div.setAttribute('data-suggest-index', String(idx));
+      div.setAttribute('data-suggest-type', sug.type || 'value');
+      div.setAttribute('data-suggest-value', sug.value || '');
+      div.textContent = sug.label || sug.value || '';
+      box.appendChild(div);
+    });
+    showDeviceSuggestions();
+  }
+  async function fetchDeviceSuggestions(q){
+    const box = document.getElementById('deviceSuggestBox');
+    if (!q){ box.innerHTML=''; hideDeviceSuggestions(); return; }
+    try{
+      const { data } = await axios.get('/devices/api/suggest', { params: { q, limit: 12 }});
+      renderDeviceSuggestions(data.suggestions || []);
+    }catch(e){ box.innerHTML=''; hideDeviceSuggestions(); }
+  }
+
+  // Hide suggestions on outside click or escape
+  document.addEventListener('click', (ev) => {
+    const target = ev.target;
+    const inBox = target.closest && target.closest('#deviceSuggestBox');
+    const isInput = target.id === 'deviceSearchInput';
+    if (!inBox && !isInput) hideDeviceSuggestions();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') hideDeviceSuggestions();
+  });
+
+  // Crear dispositivo
+  const btnNew = document.getElementById('btnNewDevice');
+  if (btnNew) {
+    btnNew.addEventListener('click', () => {
+      ['cdName','cdManufacturer','cdCountry','cdBarcode','cdSerial','cdDescription','cdAssignedUsernames','cdOwnerUsername']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+      ['cdNetWiFi','cdNetLoRa','cdNetBt','cdNet4G','cdNetNBIoT','cdNetLTEM']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.checked = false; });
+      const modal = new bootstrap.Modal(document.getElementById('createDeviceModal'));
+      modal.show();
+    });
+    document.getElementById('btnConfirmCreate').addEventListener('click', async () => {
+      const name = document.getElementById('cdName').value.trim();
+      if (!name) { toastError('El nombre es obligatorio'); return; }
+      const manufacturer = document.getElementById('cdManufacturer').value.trim();
+      const country = document.getElementById('cdCountry').value.trim();
+      const barcode = document.getElementById('cdBarcode').value.trim();
+      const serial = document.getElementById('cdSerial').value.trim();
+      const description = document.getElementById('cdDescription').value.trim();
+      const ownerUsernameEl = document.getElementById('cdOwnerUsername');
+      const owner_username = ownerUsernameEl ? ownerUsernameEl.value.trim() : undefined;
+      const nets = ['cdNetWiFi','cdNetLoRa','cdNetBt','cdNet4G','cdNetNBIoT','cdNetLTEM']
+        .map(id => { const el = document.getElementById(id); return el && el.checked ? el.value : null; })
+        .filter(Boolean);
+      const assigned_usernames = document.getElementById('cdAssignedUsernames').value
+        .split(',').map(s => s.trim()).filter(Boolean);
+
+      const payload = { name };
+      if (manufacturer) payload.manufacturer = manufacturer;
+      if (country) payload.country_of_manufacture = country;
+      if (barcode) payload.barcode = barcode;
+      if (serial) payload.serial_number = serial;
+      if (description) payload.description = description;
+      if (nets.length) payload.network_types = nets;
+      if (assigned_usernames.length) payload.assigned_usernames = assigned_usernames;
+      if (owner_username !== undefined && owner_username) payload.owner_username = owner_username;
+
+      try{
+        await axios.post('/devices/api', payload);
+        toastSuccess('Dispositivo creado');
+        bootstrap.Modal.getInstance(document.getElementById('createDeviceModal')).hide();
+        loadDevices();
+      }catch(e){
+        const msg = e?.response?.data?.error || 'No se pudo crear el dispositivo';
+        toastError(msg);
+      }
+    });
+  }
+
+  loadCountries();
+  loadDevices();
+})();
+</script>
+{% endblock %}

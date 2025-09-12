@@ -1,0 +1,20 @@
+# Servidor
+server_host=0.0.0.0
+server_port=5000
+debugMode=false
+
+# Mongo (dos opciones, usa SOLO una)
+# Opción 1: por URI
+# mongo_uri=mongodb://usuario:password@127.0.0.1:27017/easyAuth4IoT?authSource=admin
+# Opción 2: host/puerto/nombre
+mongo_host=127.0.0.1
+mongo_port=27017
+mongo_db=easyAuth4IoT
+
+# UI (colores de marca)
+ui_primary=#4fe2df
+ui_secondary=#571cd8
+
+# Claves (pon valores fuertes en producción)
+secret_key=pon_aqui_una_clave_aleatoria_larga
+db_encryption_key=clave_de_encriptacion_servidor

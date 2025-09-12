@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Frizit App{% endblock %}</title>
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Font Awesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- FullCalendar -->
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+    <style>
+        .navbar-brand {
+            font-size: 1.5rem;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .navbar-brand img {
+            display: inline-block;
+            vertical-align: middle;
+        }
+        .sidebar {
+            min-height: calc(100vh - 56px);
+            background-color: #f8f9fa;
+        }
+        .main-content {
+            padding: 20px;
+        }
+        .card { box-shadow: var(--fz-shadow-sm); margin-bottom: 1rem; border-radius: var(--fz-radius); border: 1px solid var(--fz-border); background: var(--fz-card-bg); }
+        .card .card-header { background: transparent; border-bottom: 1px solid var(--fz-border); }
+        .card .card-footer { background: transparent; border-top: 1px solid var(--fz-border); }
+        .card:hover { box-shadow: var(--fz-shadow); }
+        .clickable-card { cursor: pointer; transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease, background-color .12s ease; }
+        .clickable-card:hover { transform: translateY(-2px); box-shadow: var(--fz-shadow); border-color: rgba(0,0,0,0.12); }
+        .clickable-card:active { transform: translateY(0); }
+        @media (prefers-reduced-motion: reduce) {
+          .clickable-card { transition: box-shadow .12s ease; }
+          .clickable-card:hover, .clickable-card:active { transform: none; }
+        }
+
+        .modal-content { border-radius: var(--fz-radius-lg); box-shadow: var(--fz-shadow); border: 1px solid var(--fz-border); }
+        .modal-header, .modal-footer { border-color: var(--fz-border); }
+
+        .btn { border-radius: 12px; font-weight: 600; transition: transform .12s ease, box-shadow .12s ease; }
+        .btn:hover { transform: translateY(-1px); }
+        .btn-outline-primary { color: var(--fz-primary) !important; border-color: var(--fz-primary) !important; }
+        .btn-outline-primary:hover { color: #fff !important; background-color: var(--fz-primary) !important; border-color: var(--fz-primary) !important; }
+        .btn-outline-secondary { color: #334155 !important; border-color: #e2e8f0 !important; }
+        .btn-outline-secondary:hover { background:#e2e8f0 !important; color:#111827 !important; }
+
+        .badge { border-radius: 999px; font-weight: 600; padding: .45em .65em; }
+        .badge.bg-light { background: #eef2f7 !important; color: #334155 !important; }
+
+        .form-control, .form-select, .form-check-input { border-radius: 10px; border-color: var(--fz-border); }
+        .form-control:focus, .form-select:focus { box-shadow: var(--fz-focus); border-color: var(--fz-primary-strong); }
+        .form-check-input:focus { box-shadow: var(--fz-focus); border-color: var(--fz-primary-strong); }
+        .input-group-text { border-radius: 10px; border-color: var(--fz-border); background:#f8fafc; }
+
+        .list-group-item { border-color: var(--fz-border); }
+        .list-group-item-action:hover { background:#f8fafc; }
+
+        .table { border-color: var(--fz-border); }
+        .table > :not(caption) > * > * { box-shadow: inset 0 0 0 9999px rgba(0,0,0,0); }
+        .table thead th { border-bottom-color: var(--fz-border); }
+        .table tbody tr:hover { background: #f8fafc; }
+
+        .dropdown-menu { border: 1px solid var(--fz-border); border-radius: var(--fz-radius); box-shadow: var(--fz-shadow-sm); }
+        .dropdown-item { border-radius: 8px; }
+
+        /* Navbar polish */
+        .navbar-dark.bg-primary {
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            background: linear-gradient(90deg, var(--fz-primary), var(--fz-primary-strong)) !important;
+        }
+        .navbar-brand img { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.15)); }
+        /* Modern theme variables */
+        :root {
+            --fz-primary: {{ ui_primary }};
+            --fz-primary-strong: {{ ui_secondary }};
+            --fz-accent: #dae476;
+            --fz-bg: #f6faf9;
+            --fz-card-bg: #ffffff;
+            --fz-border: rgba(0,0,0,0.08);
+            --fz-shadow-sm: 0 4px 14px rgba(0,0,0,0.06);
+            --fz-shadow: 0 10px 28px rgba(0,0,0,0.08);
+            --fz-radius: 14px;
+            --fz-radius-lg: 18px;
+            --fz-focus: 0 0 0 0.25rem rgba(0, 159, 140, 0.35);
+        }
+
+        body {
+            background: radial-gradient(900px 480px at 100% -20%, rgba(218,228,118,0.14), transparent),
+                        radial-gradient(900px 480px at -20% 100%, rgba(0,159,140,0.10), transparent),
+                        linear-gradient(180deg, #ffffff 0%, #f9fbfa 100%);
+            position: relative;
+        }
+        /* Soft animated color blobs behind everything */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: -20% -10% -10% -20%;
+            z-index: -1;
+            background:
+              radial-gradient(40% 35% at 15% 20%, rgba(0,194,168,0.14), transparent 60%),
+              radial-gradient(40% 35% at 85% 75%, rgba(218,228,118,0.18), transparent 60%),
+              radial-gradient(35% 30% at 50% 10%, rgba(139,92,246,0.10), transparent 60%);
+            filter: blur(40px);
+            opacity: .9;
+            animation: backdropFloat 22s ease-in-out infinite alternate;
+            pointer-events: none;
+        }
+        @keyframes backdropFloat {
+            0%   { transform: translate3d(0,0,0) scale(1); }
+            50%  { transform: translate3d(0,-8px,0) scale(1.02); }
+            100% { transform: translate3d(0,0,0) scale(1); }
+        }
+
+        .btn-primary {
+            background-color: var(--fz-primary);
+            border-color: var(--fz-primary);
+            background-image: linear-gradient(135deg, var(--fz-primary), var(--fz-primary-strong));
+            background-size: 100% 100%;
+            transition: background-size .2s ease, transform .12s ease;
+        }
+        .btn-primary:hover {
+            background-color: var(--fz-primary-strong);
+            border-color: var(--fz-primary-strong);
+            background-image: linear-gradient(135deg, var(--fz-primary-strong), #00b9a0);
+            background-size: 105% 105%;
+        }
+        .bg-primary { background-color: var(--fz-primary) !important; }
+        .text-primary { color: var(--fz-primary) !important; }
+        .border-primary { border-color: var(--fz-primary) !important; }
+        .btn-secondary { background-color: var(--fz-primary-strong); border-color: var(--fz-primary-strong); }
+        .btn-secondary:hover { background-color: #00877a; border-color: #00877a; }
+        .bg-secondary { background-color: var(--fz-primary-strong) !important; }
+        .nav-link { color: rgba(255,255,255,0.88) !important; }
+        .nav-link:hover, .nav-link:focus { color: #fff !important; text-decoration: none; }
+        /* Override for navbar-dark nav-links */
+        .navbar-dark .nav-link {
+            color: rgba(255, 255, 255, 0.85) !important;
+        }
+        .navbar-dark .nav-link:hover, .navbar-dark .nav-link:focus {
+            color: #ffffff !important;
+        }
+        /* Sidebar nav-links */
+        .sidebar .nav-link {
+            color: #005349 !important;
+        }
+        .sidebar .nav-link:hover, .sidebar .nav-link:focus {
+            color: #009f8c !important;
+        }
+        
+        /* Sidebar styles for mobile */
+        @media (max-width: 767.98px) {
+            .sidebar {
+                position: fixed;
+                top: 0;
+                bottom: 0;
+                left: 0;
+                z-index: 1000;
+                padding: 60px 0 0;
+                box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+                background-color: #f8f9fa;
+                width: 240px;
+                max-width: 100%;
+            }
+        }
+        /* Dropdown items */
+        .dropdown-item {
+            color: #005349 !important;
+        }
+        .dropdown-item:hover, .dropdown-item:focus {
+            background-color: rgba(0, 83, 73, 0.1) !important;
+            color: #009f8c !important;
+        }
+        /* Links */
+        a { color: var(--fz-primary); text-decoration: none; }
+        a:hover { color: var(--fz-primary-strong); text-decoration: underline; }
+        /* Disabled buttons */
+        .btn:disabled, .btn.disabled {
+            background-color: #009f8c !important;
+            border-color: #009f8c !important;
+            opacity: 0.65;
+        }
+        /* Active buttons */
+        .btn.active, .btn:active,
+        .btn-primary.active, .btn-primary:active {
+            background-color: #009f8c !important;
+            border-color: #009f8c !important;
+            box-shadow: 0 0 0 0.2rem rgba(0, 159, 140, 0.5) !important;
+        }
+        /* Outline buttons (active state) */
+        .btn-outline-primary:active, .btn-outline-primary.active { color: #fff !important; background-color: var(--fz-primary-strong) !important; border-color: var(--fz-primary-strong) !important; }
+        .toast.align-items-center { border-radius: 12px; }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('home') }}">
+                {% if brand_icon_url %}
+                  <img src="{{ brand_icon_url }}" alt="App Icon" height="30">
+                {% endif %}
+                {% if brand_logo_url %}
+                  <img src="{{ brand_logo_url }}" alt="App Logo" height="30">
+                {% endif %}
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-label="Alternar navegación" title="Alternar navegación">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">{% if current_user.is_authenticated %}
+                    {% if current_user.role == 'admin' %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('user.list_users') }}">
+                            <i class="fas fa-users"></i> Usuarios
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('vault.list_page') }}">
+                            <i class="fa-solid fa-lock"></i> Contraseñas
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('devices.list_page') }}">
+                            <i class="fa-solid fa-microchip"></i> Dispositivos
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+                <ul class="navbar-nav">{% if current_user.is_authenticated %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user"></i> {{ current_user.username }}
+                        </a>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('user.profile') }}">
+                                    <i class="fas fa-id-card"></i> Perfil
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#localCryptoModal">
+                                    <i class="fa-solid fa-lock"></i> Semilla de cifrado local
+                                </a>
+                            </li>
+                            {% if current_user.role == 'admin' %}
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('auth.register_page') }}">
+                                    <i class="fas fa-user-plus"></i> Registrar Usuario
+                                </a>
+                            </li>
+                            {% endif %}
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item" href="{{ url_for('auth.logout') }}">
+                                    <i class="fas fa-sign-out-alt"></i> Cerrar Sesión
+                                </a>
+                            </li>
+                        </ul>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('auth.login_page') }}">
+                            <i class="fas fa-sign-in-alt"></i> Iniciar Sesión
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Main Content - full width by default -->
+            <main class="col-12 px-md-4 main-content" id="mainContent">
+
+            </main>
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                {% block content %}{% endblock %}
+            </main>
+        </div>
+    </div>
+
+    <!-- Local Crypto Modal -->
+    {% if current_user.is_authenticated %}
+    <div class="modal fade" id="localCryptoModal" tabindex="-1" aria-labelledby="localCryptoModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="localCryptoModalLabel"><i class="fa-solid fa-lock"></i> Semilla de cifrado local</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2">Introduce tu semilla de 12 palabras. Esta semilla nunca se envía al servidor. Puedes optar por recordar la semilla durante esta sesión del navegador.</p>
+            <textarea id="lc_seed" class="form-control" rows="2" placeholder="semilla de 12 palabras"></textarea>
+            <div id="lc_suggest" class="mt-2"></div>
+            <div class="form-check mt-2">
+              <input class="form-check-input" type="checkbox" value="1" id="lc_remember">
+              <label class="form-check-label" for="lc_remember">Recordar durante esta sesión</label>
+            </div>
+            <div id="lc_error" class="text-danger small mt-2" style="display:none;"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+            <button type="button" id="lc_apply_btn" class="btn btn-primary"><i class="fa-solid fa-key"></i> Activar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <!-- Vue.js 3 -->
+    <script src="https://unpkg.com/vue@3.4.27/dist/vue.global.js"></script>
+    <!-- Global toast container -->
+    <div id="toastContainer" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1080;"></div>
+    <script>
+        // Initialize sidebar toggle functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get toggle buttons and elements
+            var toggleButtons = document.querySelectorAll('[data-bs-target="#sidebarMenu"]');
+            var sidebarMenu = document.getElementById('sidebarMenu');
+            var mainContent = document.getElementById('mainContent');
+            
+            // Function to adjust main content width
+            function adjustMainContent() {
+                if (sidebarMenu.classList.contains('show')) {
+                    // Sidebar is visible, reduce main content width
+                    mainContent.classList.remove('col-12');
+                    mainContent.classList.add('col-md-9', 'ms-sm-auto', 'col-lg-10');
+                } else {
+                    // Sidebar is hidden, expand main content to full width
+                    mainContent.classList.remove('col-md-9', 'ms-sm-auto', 'col-lg-10');
+                    mainContent.classList.add('col-12');
+                }
+            }
+            
+            // Add click event listeners to toggle buttons
+            toggleButtons.forEach(function(button) {
+                button.addEventListener('click', function() {
+                    // This ensures the toggle works properly
+                    var bsCollapse = bootstrap.Collapse.getInstance(sidebarMenu);
+                    
+                    if (!bsCollapse) {
+                        bsCollapse = new bootstrap.Collapse(sidebarMenu, {
+                            toggle: false
+                        });
+                    }
+                    
+                    if (sidebarMenu.classList.contains('show')) {
+                        bsCollapse.hide();
+                    } else {
+                        bsCollapse.show();
+                    }
+                    
+                    // Wait for the collapse animation to complete
+                    setTimeout(adjustMainContent, 350);
+                });
+            });
+            
+            // Listen for Bootstrap's events to handle cases when sidebar is toggled programmatically
+            sidebarMenu.addEventListener('shown.bs.collapse', adjustMainContent);
+            sidebarMenu.addEventListener('hidden.bs.collapse', adjustMainContent);
+            
+            // Initialize main content to full width on page load
+            adjustMainContent();
+        });
+
+        // Global toast helpers
+        function showToast(message, variant = 'success', delay = 2500) {
+            try {
+                var container = document.getElementById('toastContainer');
+                if (!container) return;
+                var toastEl = document.createElement('div');
+                toastEl.className = 'toast align-items-center text-bg-' + variant + ' border-0';
+                toastEl.setAttribute('role', 'alert');
+                toastEl.setAttribute('aria-live', 'assertive');
+                toastEl.setAttribute('aria-atomic', 'true');
+                toastEl.innerHTML = `
+                  <div class="d-flex">
+                    <div class="toast-body">${message || ''}</div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+                  </div>`;
+                container.appendChild(toastEl);
+                var t = new bootstrap.Toast(toastEl, { delay: delay, autohide: true });
+                toastEl.addEventListener('hidden.bs.toast', function(){
+                    toastEl.parentElement && toastEl.parentElement.removeChild(toastEl);
+                });
+                t.show();
+            } catch (e) { /* no-op */ }
+        }
+        function toastSuccess(msg, delay){ showToast(msg, 'success', delay); }
+        function toastError(msg, delay){ showToast(msg, 'danger', delay); }
+    </script>
+    {% if current_user.is_authenticated %}
+    <script>
+      (function(){
+        // Expose whether this user should use local-only crypto
+        var USER_LOCAL_KEY = JSON.parse('{{ (current_user.local_key | tojson) if current_user.is_authenticated else "false" }}');
+        try{ window.USER_LOCAL_KEY = USER_LOCAL_KEY; }catch(e){}
+
+        // Utilities
+        var enc = new TextEncoder();
+        var dec = new TextDecoder();
+        function b64enc(bytes){ return btoa(String.fromCharCode.apply(null, Array.from(new Uint8Array(bytes)))); }
+        function b64dec(str){ return Uint8Array.from(atob(str), function(c){ return c.charCodeAt(0); }); }
+        function randBytes(n){ var a=new Uint8Array(n); crypto.getRandomValues(a); return a; }
+
+        // LocalCrypto manager (in-memory, optional session storage)
+        var LocalCrypto = {
+          _mnemonic: null,
+          _remember: false,
+          get mnemonic(){ return this._mnemonic; },
+          isReady: function(){ return !!this._mnemonic; },
+          setMnemonic: function(mnemonic, remember){
+            this._mnemonic = (mnemonic || '').trim();
+            this._remember = !!remember;
+            if (this._remember) {
+              try { sessionStorage.setItem('lc_mnemonic', this._mnemonic); } catch(e) {}
+            } else {
+              try { sessionStorage.removeItem('lc_mnemonic'); } catch(e) {}
+            }
+            document.dispatchEvent(new CustomEvent('local-crypto-ready', { detail: { ready: true } }));
+          },
+          clear: function(){
+            this._mnemonic = null;
+            this._remember = false;
+            try { sessionStorage.removeItem('lc_mnemonic'); } catch(e) {}
+            document.dispatchEvent(new CustomEvent('local-crypto-cleared', { detail: { ready: false } }));
+          },
+          _deriveKey: async function(saltBytes, iterations){
+            var baseKey = await crypto.subtle.importKey('raw', enc.encode(this._mnemonic || ''), 'PBKDF2', false, ['deriveKey']);
+            return await crypto.subtle.deriveKey(
+              { name: 'PBKDF2', salt: saltBytes, iterations: iterations || 200000, hash: 'SHA-256' },
+              baseKey,
+              { name: 'AES-GCM', length: 256 },
+              false,
+              ['encrypt','decrypt']
+            );
+          },
+          encryptJSON: async function(obj){
+            if (!this.isReady()) throw new Error('LocalCrypto not ready');
+            var salt = randBytes(16);
+            var iv = randBytes(12);
+            var key = await this._deriveKey(salt, 200000);
+            var plaintext = enc.encode(JSON.stringify(obj||{}));
+            var cipher = await crypto.subtle.encrypt({name:'AES-GCM', iv: iv}, key, plaintext);
+            return {
+              payload_b64: b64enc(new Uint8Array(cipher)),
+              meta: { alg:'AES-GCM', kdf:'PBKDF2', iter:200000, iv:b64enc(iv), salt:b64enc(salt) }
+            };
+          },
+          decryptJSON: async function(payload_b64, meta){
+            if (!this.isReady()) throw new Error('LocalCrypto not ready');
+            var iv = b64dec((meta && meta.iv) || '');
+            var salt = b64dec((meta && meta.salt) || '');
+            var iter = (meta && meta.iter) || 200000;
+            var key = await this._deriveKey(salt, iter);
+            var cipher = b64dec(payload_b64);
+            var plain = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, cipher);
+            return JSON.parse(dec.decode(new Uint8Array(plain)));
+          },
+          encryptBytes: async function(bytes){
+            if (!this.isReady()) throw new Error('LocalCrypto not ready');
+            var salt = randBytes(16);
+            var iv = randBytes(12);
+            var key = await this._deriveKey(salt, 200000);
+            var cipher = await crypto.subtle.encrypt({name:'AES-GCM', iv: iv}, key, bytes);
+            return {
+              bytes: new Uint8Array(cipher),
+              meta: { alg:'AES-GCM', kdf:'PBKDF2', iter:200000, iv:b64enc(iv), salt:b64enc(salt) }
+            };
+          },
+          decryptBytes: async function(cipherBytes, meta){
+            if (!this.isReady()) throw new Error('LocalCrypto not ready');
+            var iv = b64dec((meta && meta.iv) || '');
+            var salt = b64dec((meta && meta.salt) || '');
+            var iter = (meta && meta.iter) || 200000;
+            var key = await this._deriveKey(salt, iter);
+            var plain = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, cipherBytes);
+            return new Uint8Array(plain);
+          }
+        };
+
+        // Expose globally
+        window.LocalCrypto = LocalCrypto;
+
+        // Auto-restore from session if present
+        try{
+          var saved = sessionStorage.getItem('lc_mnemonic');
+          if (saved && typeof saved === 'string' && saved.trim().length > 0){
+            LocalCrypto.setMnemonic(saved, true);
+          }
+        }catch(e){}
+
+        // BIP39 assist: load words, suggest, and validate words exist in wordlist
+        var BIP39_WORDS = null;
+        async function loadBip39Words(){
+          if (BIP39_WORDS) return BIP39_WORDS;
+          try{
+            var resp = await fetch("{{ url_for('static', filename='bip39/english.txt') }}", { cache: 'force-cache' });
+            var txt = await resp.text();
+            BIP39_WORDS = txt.split(/\r?\n/).map(function(w){return w.trim();}).filter(Boolean);
+          }catch(e){ BIP39_WORDS = null; }
+          return BIP39_WORDS;
+        }
+        function currentPrefixFrom(text){
+          var parts = (text || '').split(/\s+/);
+          return parts.length ? parts[parts.length-1] : '';
+        }
+        function replaceLastToken(text, replacement){
+          var parts = (text || '').split(/\s+/).filter(function(w){return w!=='';});
+          if (parts.length===0) return replacement + ' ';
+          parts[parts.length-1] = replacement;
+          return parts.join(' ') + ' ';
+        }
+        function renderSuggestions(container, words, prefix){
+          if (!container) return;
+          container.innerHTML = '';
+          if (!words || !prefix) return;
+          var pref = prefix.toLowerCase();
+          var list = words.filter(function(w){ return w.indexOf(pref)===0; }).slice(0, 10);
+          if (list.length===0) return;
+          var frag = document.createDocumentFragment();
+          list.forEach(function(w){
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn btn-sm btn-outline-secondary me-2 mb-2';
+            btn.textContent = w;
+            btn.dataset.word = w;
+            frag.appendChild(btn);
+          });
+          container.appendChild(frag);
+        }
+        function allWordsValid(words){
+          if (!BIP39_WORDS || BIP39_WORDS.length === 0) return true; // fallback: skip validation if not loaded
+          for (var i=0;i<words.length;i++){
+            if (BIP39_WORDS.indexOf(words[i])===-1) return false;
+          }
+          return true;
+        }
+
+        // LocalCrypto modal: wire handlers for all authenticated users; auto-prompt only if USER_LOCAL_KEY is required
+        document.addEventListener('DOMContentLoaded', function(){
+          var modalEl = document.getElementById('localCryptoModal');
+          if (!modalEl) return;
+          modalEl.addEventListener('shown.bs.modal', async function(){
+            await loadBip39Words();
+            var seedEl = document.getElementById('lc_seed');
+            var suggestEl = document.getElementById('lc_suggest');
+            if (!seedEl) return;
+            var onInput = function(){
+              var pref = currentPrefixFrom(seedEl.value);
+              renderSuggestions(suggestEl, BIP39_WORDS, pref);
+            };
+            seedEl.removeEventListener('input', onInput);
+            seedEl.addEventListener('input', onInput);
+            suggestEl && suggestEl.addEventListener('click', function(ev){
+              var t = ev.target; if (!t || !t.dataset || !t.dataset.word) return;
+              seedEl.value = replaceLastToken(seedEl.value, t.dataset.word);
+              seedEl.dispatchEvent(new Event('input'));
+              seedEl.focus();
+            });
+            // initial render
+            seedEl.dispatchEvent(new Event('input'));
+          });
+          // Auto-prompt only for users that require local key
+          if (USER_LOCAL_KEY && !LocalCrypto.isReady()){
+            var modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+            modal.show();
+          }
+          var applyBtn = document.getElementById('lc_apply_btn');
+          var seedEl = document.getElementById('lc_seed');
+          var rememberEl = document.getElementById('lc_remember');
+          var errEl = document.getElementById('lc_error');
+          if (applyBtn && seedEl) {
+            applyBtn.addEventListener('click', function(){
+              if (errEl){ errEl.style.display='none'; }
+              var seed = (seedEl.value || '').trim().toLowerCase();
+              var words = seed.split(/\s+/).filter(function(w){ return w; });
+              if (words.length !== 12){
+                if (errEl){ errEl.textContent = 'La semilla debe tener 12 palabras.'; errEl.style.display='block'; }
+                return;
+              }
+              if (BIP39_WORDS && !allWordsValid(words)){
+                if (errEl){ errEl.textContent = 'Una o más palabras no están en el listado BIP-39.'; errEl.style.display='block'; }
+                return;
+              }
+              LocalCrypto.setMnemonic(seed, !!(rememberEl && rememberEl.checked));
+              toastSuccess('Cifrado local activado');
+              try{ var m = bootstrap.Modal.getInstance(modalEl); m && m.hide(); }catch(e){}
+            });
+          }
+        });
+
+        // Axios interceptors to prevent plaintext to sensitive endpoints when LocalCrypto is ready
+        // Consider LocalCrypto readiness regardless of whether the account requires local_key.
+        function isLocalReady(){ return window.LocalCrypto && window.LocalCrypto.isReady(); }
+        function isEncryptedUrl(url){ return /\/(credentials|items)\/encrypted(\b|\?|#)/.test(url); }
+        function isUploadUrl(url){ return /\/(credentials|upload)(\b|\?|#)/.test(url) && /\/upload(\b|\?|#)/.test(url); }
+
+        if (window.axios && typeof window.axios.interceptors === 'object'){
+          axios.interceptors.request.use(async function(config){
+            try{
+              if (!isLocalReady() || !config || !config.url || !config.method) return config;
+              var method = (config.method || 'get').toLowerCase();
+              var url = config.url;
+
+              // Transform JSON plaintext for devices credentials
+              if (method === 'post' && !isEncryptedUrl(url) && /\/devices\/[^/]+\/credentials(\b|\?|#)/.test(url) && !isUploadUrl(url)){
+                if (config.data && !(config.data instanceof FormData)){
+                  var t = config.data.type;
+                  if (t === 'userpass' && (('username' in config.data) || ('password' in config.data))){
+                    var payloadUP = { username: config.data.username, password: config.data.password, note: config.data.note || null };
+                    var encUP = await LocalCrypto.encryptJSON(payloadUP);
+                    config.url = url.replace(/\/credentials(\b)/, '/credentials/encrypted');
+                    config.data = { type: 'userpass', payload_b64: encUP.payload_b64, meta: encUP.meta };
+                  } else if (t === 'token' && (('token' in config.data))){
+                    var payloadTK = { token: config.data.token, label: (config.data.label || null), note: config.data.note || null };
+                    var encTK = await LocalCrypto.encryptJSON(payloadTK);
+                    config.url = url.replace(/\/credentials(\b)/, '/credentials/encrypted');
+                    config.data = { type: 'token', payload_b64: encTK.payload_b64, meta: encTK.meta };
+                  }
+                }
+              }
+
+              // Transform JSON plaintext for vault items to encrypted
+              if (method === 'post' && !isEncryptedUrl(url) && /\/vault\/items(\b|\?|#)/.test(url)){
+                if (config.data && !(config.data instanceof FormData)){
+                  var vt = config.data.type || 'password';
+                  var payloadAny = Object.assign({}, config.data);
+                  delete payloadAny.type;
+                  var encAny = await LocalCrypto.encryptJSON(payloadAny);
+                  config.url = url.replace(/\/items(\b)/, '/items/encrypted');
+                  config.data = { type: vt, payload_b64: encAny.payload_b64, meta: encAny.meta };
+                }
+              }
+
+              // Transform FormData upload to encrypted upload (devices and vault)
+              if (method === 'post' && isUploadUrl(url) && config.data instanceof FormData){
+                var already = config.data.get('encrypted');
+                if (already !== 'true'){
+                  var typeVal = config.data.get('type') || ( /\/vault\//.test(url) ? 'file' : 'certificate');
+                  var labelVal = config.data.get('label');
+                  var noteVal = config.data.get('note');
+                  var files = config.data.getAll('files');
+                  var fd = new FormData();
+                  fd.append('type', typeVal);
+                  var encPack = await LocalCrypto.encryptJSON({ label: labelVal || null, note: noteVal || null });
+                  fd.append('encrypted', 'true');
+                  fd.append('cred_payload_b64', encPack.payload_b64);
+                  fd.append('cred_meta', JSON.stringify(encPack.meta));
+                  var metas = [];
+                  for (var i=0;i<files.length;i++){
+                    var f = files[i];
+                    if (!f) continue;
+                    var buf = new Uint8Array(await f.arrayBuffer());
+                    var filePack = await LocalCrypto.encryptBytes(buf);
+                    metas.push(Object.assign({}, filePack.meta, { original_mime: f.type || 'application/octet-stream' }));
+                    var blob = new Blob([filePack.bytes], { type: 'application/octet-stream' });
+                    fd.append('files', blob, f.name || 'file');
+                  }
+                  fd.append('enc_meta_list', JSON.stringify(metas));
+                  config.data = fd;
+                  // axios will set proper multipart boundary; do not force Content-Type
+                  if (config.headers){ delete config.headers['Content-Type']; delete config.headers['content-type']; }
+                }
+              }
+            }catch(e){ console.warn('Encryption interceptor error:', e); }
+            return config;
+          }, function(error){ return Promise.reject(error); });
+        }
+      })();
+    </script>
+    {% endif %}
+    {% block extra_js %}{% endblock %}
+</body>
+</html>
