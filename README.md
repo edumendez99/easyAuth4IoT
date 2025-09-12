@@ -8,7 +8,7 @@ Gestor de credenciales y contraseñas para IoT con cifrado local (cliente) y del
 ## Requisitos
 
 - Python 3.10+
-- MongoDB 5.0+ en ejecución (local o remoto) Lo puedes instalar de forma secilla utilizando docker (https://hub.docker.com/r/mongo)
+- MongoDB 5.0+ en ejecución (local o remoto) Lo puedes instalar de forma secilla utilizando docker (https://hub.docker.com/_/mongo)
 - pip / virtualenv
 
 ## Inicio Rápido
