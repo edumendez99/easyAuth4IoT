@@ -1342,3 +1342,214 @@ def set_owner(device_id):
     }})
     device = db.devices.find_one({'_id': did})
     return jsonify({'device': _serialize_device(device)})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Device Logs (Maintenance & Event Timeline)
+# ─────────────────────────────────────────────────────────────────────────────
+
+ALLOWED_LOG_TYPES = {'maintenance', 'firmware_update', 'reboot', 'note', 'custom'}
+
+
+def _serialize_log(log: dict) -> dict:
+    """Serialize a device log document for JSON response."""
+    if not log:
+        return None
+    return {
+        '_id': str(log['_id']),
+        'device_id': str(log.get('device_id', '')),
+        'event_type': log.get('event_type', 'note'),
+        'title': log.get('title', ''),
+        'description': log.get('description', ''),
+        'metadata': log.get('metadata', {}),
+        'created_at': log.get('created_at').isoformat() if log.get('created_at') else None,
+        'created_by': log.get('created_by', ''),
+        'created_by_username': log.get('created_by_username', ''),
+        'updated_at': log.get('updated_at').isoformat() if log.get('updated_at') else None,
+    }
+
+
+def _can_edit_log(user, log: dict, device: dict) -> bool:
+    """Check if user can edit/delete a log entry."""
+    if user.role == 'admin':
+        return True
+    if _is_owner(user, device):
+        return True
+    # Creator can edit their own logs
+    if log.get('created_by') == str(user.get_id()):
+        return True
+    return False
+
+
+@devices_bp.route('/<device_id>/logs', methods=['GET'])
+@login_required
+def list_device_logs(device_id):
+    """List all log entries for a device."""
+    did = _obj_id(device_id)
+    if not did:
+        return jsonify({'error': 'Invalid device_id'}), 400
+    device = db.devices.find_one({'_id': did})
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    if not _can_view_device(current_user, device):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    # Pagination
+    page = max(1, int(request.args.get('page', 1)))
+    per_page = min(100, max(1, int(request.args.get('per_page', 50))))
+    skip = (page - 1) * per_page
+
+    # Filter by event_type (optional)
+    query = {'device_id': did}
+    event_type = request.args.get('event_type')
+    if event_type and event_type in ALLOWED_LOG_TYPES:
+        query['event_type'] = event_type
+
+    total = db.device_logs.count_documents(query)
+    logs = list(db.device_logs.find(query).sort('created_at', -1).skip(skip).limit(per_page))
+
+    # Enrich with creator username
+    creator_ids = list(set(log.get('created_by') for log in logs if log.get('created_by')))
+    creator_oids = [_obj_id(cid) for cid in creator_ids if _obj_id(cid)]
+    users_map = {}
+    if creator_oids:
+        users = db.users.find({'_id': {'$in': creator_oids}}, {'username': 1})
+        users_map = {str(u['_id']): u.get('username', '') for u in users}
+    for log in logs:
+        log['created_by_username'] = users_map.get(log.get('created_by', ''), '')
+
+    return jsonify({
+        'logs': [_serialize_log(l) for l in logs],
+        'total': total,
+        'page': page,
+        'per_page': per_page,
+    })
+
+
+@devices_bp.route('/<device_id>/logs', methods=['POST'])
+@login_required
+def create_device_log(device_id):
+    """Create a new log entry for a device."""
+    did = _obj_id(device_id)
+    if not did:
+        return jsonify({'error': 'Invalid device_id'}), 400
+    device = db.devices.find_one({'_id': did})
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    # Only owner or admin can create logs
+    if not (current_user.role == 'admin' or _is_owner(current_user, device)):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.get_json(silent=True) or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({'error': 'title is required'}), 400
+
+    event_type = (data.get('event_type') or 'note').strip()
+    if event_type not in ALLOWED_LOG_TYPES:
+        return jsonify({'error': f'Invalid event_type. Allowed: {", ".join(ALLOWED_LOG_TYPES)}'}), 400
+
+    description = (data.get('description') or '').strip() or None
+    metadata = data.get('metadata') or {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    now = datetime.utcnow()
+    doc = {
+        'device_id': did,
+        'event_type': event_type,
+        'title': title,
+        'description': description,
+        'metadata': metadata,
+        'created_at': now,
+        'created_by': str(current_user.get_id()),
+        'updated_at': now,
+    }
+    result = db.device_logs.insert_one(doc)
+    doc['_id'] = result.inserted_id
+
+    # Get creator username
+    user = db.users.find_one({'_id': _obj_id(str(current_user.get_id()))}, {'username': 1})
+    doc['created_by_username'] = user.get('username', '') if user else ''
+
+    return jsonify({'log': _serialize_log(doc)}), 201
+
+
+@devices_bp.route('/<device_id>/logs/<log_id>', methods=['PUT'])
+@login_required
+def update_device_log(device_id, log_id):
+    """Update a log entry."""
+    did = _obj_id(device_id)
+    lid = _obj_id(log_id)
+    if not did or not lid:
+        return jsonify({'error': 'Invalid device_id or log_id'}), 400
+
+    device = db.devices.find_one({'_id': did})
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+
+    log = db.device_logs.find_one({'_id': lid, 'device_id': did})
+    if not log:
+        return jsonify({'error': 'Log not found'}), 404
+
+    if not _can_edit_log(current_user, log, device):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.get_json(silent=True) or {}
+    update = {}
+
+    if 'title' in data:
+        title = (data.get('title') or '').strip()
+        if not title:
+            return jsonify({'error': 'title cannot be empty'}), 400
+        update['title'] = title
+
+    if 'event_type' in data:
+        event_type = (data.get('event_type') or '').strip()
+        if event_type not in ALLOWED_LOG_TYPES:
+            return jsonify({'error': f'Invalid event_type. Allowed: {", ".join(ALLOWED_LOG_TYPES)}'}), 400
+        update['event_type'] = event_type
+
+    if 'description' in data:
+        update['description'] = (data.get('description') or '').strip() or None
+
+    if 'metadata' in data:
+        metadata = data.get('metadata') or {}
+        if isinstance(metadata, dict):
+            update['metadata'] = metadata
+
+    if not update:
+        return jsonify({'error': 'No valid fields to update'}), 400
+
+    update['updated_at'] = datetime.utcnow()
+    db.device_logs.update_one({'_id': lid}, {'$set': update})
+
+    log = db.device_logs.find_one({'_id': lid})
+    user = db.users.find_one({'_id': _obj_id(log.get('created_by', ''))}, {'username': 1})
+    log['created_by_username'] = user.get('username', '') if user else ''
+
+    return jsonify({'log': _serialize_log(log)})
+
+
+@devices_bp.route('/<device_id>/logs/<log_id>', methods=['DELETE'])
+@login_required
+def delete_device_log(device_id, log_id):
+    """Delete a log entry."""
+    did = _obj_id(device_id)
+    lid = _obj_id(log_id)
+    if not did or not lid:
+        return jsonify({'error': 'Invalid device_id or log_id'}), 400
+
+    device = db.devices.find_one({'_id': did})
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+
+    log = db.device_logs.find_one({'_id': lid, 'device_id': did})
+    if not log:
+        return jsonify({'error': 'Log not found'}), 404
+
+    if not _can_edit_log(current_user, log, device):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    db.device_logs.delete_one({'_id': lid})
+    return jsonify({'deleted': True})
