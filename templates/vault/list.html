@@ -377,7 +377,14 @@
                 <div v-if="it._dec">
                   <template v-if="it.type==='password'">
                     <div class="mb-1"><span class="text-muted">Usuario:</span> <code v-text="it._dec.username"></code></div>
-                    <div class="mb-1"><span class="text-muted">Password:</span> <code v-text="it._dec.password"></code></div>
+                    <div class="mb-1">
+                      <span class="text-muted">Password:</span>
+                      <code v-if="it._showPass" v-text="it._dec.password"></code>
+                      <code v-else>••••••••</code>
+                      <button class="btn btn-sm btn-link text-decoration-none p-0 ms-2" @click="it._showPass = !it._showPass" title="Mostrar/Ocultar">
+                        <i :class="it._showPass ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+                      </button>
+                    </div>
                     <div class="mb-2"><span class="text-muted">Nota:</span> <span v-text="it._dec.note || '—'"></span></div>
                   </template>
                   <template v-else-if="it.type==='note'">
