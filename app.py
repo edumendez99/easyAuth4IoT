@@ -11,6 +11,7 @@ from utils.auth import auth_bp
 from utils.users import user_bp
 from utils.devices import devices_bp
 from utils.vault import vault_bp
+from utils.config_templates import config_templates_bp
 from utils.filters import init_filters
 from bson import ObjectId
 from datetime import datetime
@@ -115,6 +116,7 @@ app.register_blueprint(auth_bp, url_prefix='/auth')
 app.register_blueprint(user_bp, url_prefix='/users')
 app.register_blueprint(devices_bp, url_prefix='/devices')
 app.register_blueprint(vault_bp, url_prefix='/vault')
+app.register_blueprint(config_templates_bp, url_prefix='/config-templates')
 
 # Initialize custom template filters
 init_filters(app)

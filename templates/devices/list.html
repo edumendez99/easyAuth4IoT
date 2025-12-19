@@ -94,6 +94,14 @@
             <label class="form-label">Descripción</label>
             <textarea id="edDescription" class="form-control" rows="2"></textarea>
           </div>
+          <div class="col-12">
+            <label class="form-label">Campos personalizados</label>
+            <div class="form-text mb-2">Añade campos adicionales para usar en templates como <code>{% raw %}{{ device.custom.nombre_campo }}{% endraw %}</code></div>
+            <div id="edCustomFields" class="mb-2"></div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddEdCustomField">
+              <i class="fa-solid fa-plus"></i> Añadir campo
+            </button>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
@@ -209,6 +217,14 @@
           <div class="col-12">
             <label class="form-label">Usernames asignados (opcional, separados por coma)</label>
             <input type="text" id="cdAssignedUsernames" class="form-control" placeholder="user1, user2">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Campos personalizados</label>
+            <div class="form-text mb-2">Añade campos adicionales para usar en templates como <code>{% raw %}{{ device.custom.nombre_campo }}{% endraw %}</code></div>
+            <div id="cdCustomFields" class="mb-2"></div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnAddCdCustomField">
+              <i class="fa-solid fa-plus"></i> Añadir campo
+            </button>
           </div>
         </div>
       </div>
@@ -481,7 +497,66 @@
 
   document.getElementById('btnConfirmAssign').addEventListener('click', confirmAssign);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Custom fields management
+  // ─────────────────────────────────────────────────────────────────────────
+  function createCustomFieldRow(containerId, key = '', value = '') {
+    const container = document.getElementById(containerId);
+    const row = document.createElement('div');
+    row.className = 'input-group mb-2 custom-field-row';
+    row.innerHTML = `
+      <input type="text" class="form-control custom-field-key" placeholder="nombre_campo" value="${key}">
+      <input type="text" class="form-control custom-field-value" placeholder="valor" value="${value}">
+      <button type="button" class="btn btn-outline-danger btn-remove-custom-field" title="Eliminar campo">
+        <i class="fa-solid fa-times"></i>
+      </button>`;
+    container.appendChild(row);
+  }
+
+  function getCustomFields(containerId) {
+    const container = document.getElementById(containerId);
+    const fields = {};
+    container.querySelectorAll('.custom-field-row').forEach(row => {
+      const key = row.querySelector('.custom-field-key').value.trim();
+      const value = row.querySelector('.custom-field-value').value.trim();
+      if (key) {
+        // Sanitize key: only alphanumeric and underscore
+        const sanitizedKey = key.replace(/[^a-zA-Z0-9_]/g, '_');
+        fields[sanitizedKey] = value;
+      }
+    });
+    return fields;
+  }
+
+  function setCustomFields(containerId, customFields) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = '';
+    if (customFields && typeof customFields === 'object') {
+      Object.entries(customFields).forEach(([key, value]) => {
+        createCustomFieldRow(containerId, key, value || '');
+      });
+    }
+  }
+
+  // Event listeners for custom fields buttons
+  document.getElementById('btnAddEdCustomField').addEventListener('click', () => {
+    createCustomFieldRow('edCustomFields');
+  });
+  document.getElementById('btnAddCdCustomField').addEventListener('click', () => {
+    createCustomFieldRow('cdCustomFields');
+  });
+
+  // Delegated event for removing custom fields
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('.btn-remove-custom-field');
+    if (btn) {
+      btn.closest('.custom-field-row').remove();
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Editar dispositivo
+  // ─────────────────────────────────────────────────────────────────────────
   let editingDevice = null;
   function setEditNetworks(arr){
     const set = new Set(Array.isArray(arr) ? arr : []);
@@ -517,6 +592,7 @@
     document.getElementById('edSerial').value = editingDevice.serial_number || '';
     document.getElementById('edDescription').value = editingDevice.description || '';
     setEditNetworks(editingDevice.network_types);
+    setCustomFields('edCustomFields', editingDevice.custom_fields);
     const modal = new bootstrap.Modal(document.getElementById('editDeviceModal'));
     modal.show();
   }
@@ -539,6 +615,9 @@
     // compare networks arrays
     const oldNets = Array.isArray(editingDevice.network_types) ? editingDevice.network_types : [];
     if (JSON.stringify([...nets].sort()) !== JSON.stringify([...oldNets].sort())) payload.network_types = nets;
+    // custom fields
+    const customFields = getCustomFields('edCustomFields');
+    payload.custom_fields = customFields;
     // admin owner change
     const edOwner = document.getElementById('edOwnerUsername');
     if (edOwner){
@@ -682,6 +761,9 @@
       if (nets.length) payload.network_types = nets;
       if (assigned_usernames.length) payload.assigned_usernames = assigned_usernames;
       if (owner_username !== undefined && owner_username) payload.owner_username = owner_username;
+      // custom fields
+      const customFields = getCustomFields('cdCustomFields');
+      if (Object.keys(customFields).length) payload.custom_fields = customFields;
 
       try{
         await axios.post('/devices/api', payload);

@@ -357,6 +357,14 @@ def create_device():
     elif assigned_usernames is not None:
         return jsonify({'error': 'assigned_usernames must be an array if provided'}), 400
 
+    # Custom fields (key-value pairs for templates)
+    custom_fields = data.get('custom_fields')
+    if custom_fields is not None and not isinstance(custom_fields, dict):
+        return jsonify({'error': 'custom_fields must be an object'}), 400
+    if custom_fields:
+        # Sanitize keys: only alphanumeric and underscore
+        custom_fields = {k.replace(' ', '_'): v for k, v in custom_fields.items() if k}
+
     now = datetime.utcnow()
     doc = {
         'name': name,
@@ -368,6 +376,7 @@ def create_device():
         'barcode': barcode,
         'serial_number': serial_number,
         'description': description,
+        'custom_fields': custom_fields or {},
         'created_at': now,
         'created_by': str(current_user.get_id()),
         'updated_at': now,
@@ -455,6 +464,16 @@ def update_device(device_id):
             update['network_types'] = cleaned
         else:
             return jsonify({'error': 'network_types must be an array'}), 400
+
+    # Custom fields
+    if 'custom_fields' in data:
+        custom_fields = data.get('custom_fields')
+        if custom_fields is not None and not isinstance(custom_fields, dict):
+            return jsonify({'error': 'custom_fields must be an object'}), 400
+        if custom_fields:
+            # Sanitize keys: only alphanumeric and underscore
+            custom_fields = {k.replace(' ', '_'): v for k, v in custom_fields.items() if k}
+        update['custom_fields'] = custom_fields or {}
 
     # Owner (admin-only)
     if current_user.role == 'admin' and ('owner_user_id' in data or 'owner_username' in data):

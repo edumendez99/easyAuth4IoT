@@ -1,0 +1,576 @@
+{% extends 'base.html' %}
+{% block title %}Config Templates{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="fa-solid fa-file-code"></i> Config Templates</h2>
+    <div class="d-flex align-items-center gap-2">
+      <input type="text" id="searchInput" class="form-control" placeholder="Buscar templates..." style="max-width: 280px;">
+      <button class="btn btn-primary" id="btnNewTemplate">
+        <i class="fa-solid fa-plus"></i> Nuevo template
+      </button>
+    </div>
+  </div>
+
+  <div id="templatesGrid" class="row g-3"></div>
+</div>
+
+<!-- Modal Crear/Editar Template -->
+<div class="modal fade" id="templateModal" tabindex="-1">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="templateModalTitle">Nuevo template</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Nombre<span class="text-danger"> *</span></label>
+            <input type="text" id="tplName" class="form-control" placeholder="mosquitto.conf">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Tipo de archivo</label>
+            <select id="tplFileType" class="form-select">
+              <option value="conf">conf</option>
+              <option value="ini">ini</option>
+              <option value="json">json</option>
+              <option value="yaml">yaml</option>
+              <option value="xml">xml</option>
+              <option value="txt">txt</option>
+              <option value="sh">sh</option>
+              <option value="env">env</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <label class="form-label">Descripción</label>
+            <input type="text" id="tplDescription" class="form-control" placeholder="Configuración para broker MQTT...">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Contenido del template<span class="text-danger"> *</span></label>
+            <div class="form-text mb-2">
+              Usa placeholders como <code>{% raw %}{{ device.serial_number }}{% endraw %}</code>, <code>{% raw %}{{ device.name }}{% endraw %}</code>, 
+              <code>{% raw %}{{ credential.username }}{% endraw %}</code>, <code>{% raw %}{{ credential.password }}{% endraw %}</code>, etc.
+            </div>
+            <textarea id="tplContent" class="form-control font-monospace" rows="12" placeholder="# Config file&#10;ClientId=&#123;&#123; device.serial_number &#125;&#125;&#10;Username=&#123;&#123; credential.username &#125;&#125;&#10;Password=&#123;&#123; credential.password &#125;&#125;"></textarea>
+          </div>
+          <div class="col-12">
+            <div class="card bg-light">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fa-solid fa-eye"></i> Vista previa</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="btnPreview">
+                  <i class="fa-solid fa-refresh"></i> Actualizar preview
+                </button>
+              </div>
+              <div class="card-body">
+                <pre id="previewContent" class="mb-0" style="white-space: pre-wrap; max-height: 200px; overflow: auto;"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button class="btn btn-primary" id="btnSaveTemplate"><i class="fa-solid fa-save"></i> Guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Generar Config -->
+<div class="modal fade" id="generateModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="fa-solid fa-wand-magic-sparkles"></i> Generar configuración</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-12">
+            <label class="form-label">Template seleccionado</label>
+            <input type="text" id="genTemplateName" class="form-control" readonly>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Dispositivo<span class="text-danger"> *</span></label>
+            <select id="genDeviceId" class="form-select">
+              <option value="">Selecciona un dispositivo...</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Credencial (opcional)</label>
+            <select id="genCredentialId" class="form-select">
+              <option value="">Primera credencial disponible</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <button type="button" class="btn btn-outline-primary w-100" id="btnRenderConfig">
+              <i class="fa-solid fa-play"></i> Generar configuración
+            </button>
+          </div>
+          <div class="col-12" id="generatedSection" style="display: none;">
+            <div class="card">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="fa-solid fa-file-lines"></i> Configuración generada</span>
+                <div>
+                  <button type="button" class="btn btn-sm btn-outline-secondary me-2" id="btnCopyConfig">
+                    <i class="fa-solid fa-copy"></i> Copiar
+                  </button>
+                  <button type="button" class="btn btn-sm btn-primary" id="btnDownloadConfig">
+                    <i class="fa-solid fa-download"></i> Descargar
+                  </button>
+                </div>
+              </div>
+              <div class="card-body">
+                <pre id="generatedContent" class="mb-0 font-monospace" style="white-space: pre-wrap; max-height: 300px; overflow: auto;"></pre>
+              </div>
+            </div>
+            <div class="form-text mt-2">
+              Archivo sugerido: <code id="suggestedFilename"></code>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function(){
+  const role = '{{ current_user.role }}';
+  const myId = '{{ current_user.get_id() }}';
+  let templates = [];
+  let devices = [];
+  let credentials = [];
+  let editingTemplate = null;
+  let generatingTemplate = null;
+  let generatedFilename = '';
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Load data
+  // ─────────────────────────────────────────────────────────────────────────
+  async function loadTemplates() {
+    try {
+      const q = document.getElementById('searchInput').value.trim();
+      const params = q ? { params: { q } } : undefined;
+      const { data } = await axios.get('/config-templates/api', params);
+      templates = data.templates || [];
+      renderGrid();
+    } catch (e) {
+      toastError('No se pudieron cargar los templates');
+    }
+  }
+
+  async function loadDevices() {
+    try {
+      const { data } = await axios.get('/devices/api');
+      devices = data.devices || [];
+    } catch (e) {
+      devices = [];
+    }
+  }
+
+  async function loadCredentials(deviceId) {
+    if (!deviceId) {
+      credentials = [];
+      return;
+    }
+    try {
+      const { data } = await axios.get(`/devices/${deviceId}/credentials`);
+      credentials = data.credentials || [];
+    } catch (e) {
+      credentials = [];
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────
+  function canEdit(t) {
+    if (role === 'admin') return true;
+    return t.owner_id === myId;
+  }
+
+  function renderGrid() {
+    const grid = document.getElementById('templatesGrid');
+    grid.innerHTML = '';
+    if (!templates.length) {
+      grid.innerHTML = '<div class="col-12"><div class="alert alert-info">No hay templates. Crea uno nuevo para comenzar.</div></div>';
+      return;
+    }
+    templates.forEach(t => {
+      const col = document.createElement('div');
+      col.className = 'col-12 col-md-6 col-lg-4';
+      const fileIcon = getFileIcon(t.file_type);
+      col.innerHTML = `
+        <div class="card h-100 template-card">
+          <div class="card-body d-flex flex-column">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+              <h5 class="card-title mb-0">
+                <i class="${fileIcon} me-2"></i>${t.name || 'Sin nombre'}
+              </h5>
+              <span class="badge bg-secondary">.${t.file_type || 'txt'}</span>
+            </div>
+            ${t.description ? `<p class="text-muted small mb-2">${t.description}</p>` : ''}
+            <div class="small text-muted mb-2">
+              Owner: <strong>${t.owner_username || t.owner_id || '—'}</strong>
+            </div>
+            <div class="mt-auto d-flex flex-wrap gap-2">
+              <button class="btn btn-sm btn-primary" data-action="generate" data-id="${t._id}" data-name="${t.name || ''}">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Generar
+              </button>
+              ${canEdit(t) ? `
+              <button class="btn btn-sm btn-outline-dark" data-action="edit" data-id="${t._id}">
+                <i class="fa-solid fa-pen"></i> Editar
+              </button>
+              <button class="btn btn-sm btn-outline-danger" data-action="delete" data-id="${t._id}" data-name="${t.name || ''}">
+                <i class="fa-solid fa-trash"></i>
+              </button>
+              ` : ''}
+            </div>
+          </div>
+        </div>`;
+      grid.appendChild(col);
+    });
+  }
+
+  function getFileIcon(fileType) {
+    const icons = {
+      'conf': 'fa-solid fa-gear',
+      'ini': 'fa-solid fa-sliders',
+      'json': 'fa-solid fa-brackets-curly',
+      'yaml': 'fa-solid fa-file-lines',
+      'xml': 'fa-solid fa-code',
+      'txt': 'fa-solid fa-file-lines',
+      'sh': 'fa-solid fa-terminal',
+      'env': 'fa-solid fa-key',
+    };
+    return icons[fileType] || 'fa-solid fa-file';
+  }
+
+  function populateDeviceSelect() {
+    const sel = document.getElementById('genDeviceId');
+    sel.innerHTML = '<option value="">Selecciona un dispositivo...</option>';
+    devices.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d._id;
+      opt.textContent = `${d.name}${d.serial_number ? ` (${d.serial_number})` : ''}`;
+      sel.appendChild(opt);
+    });
+  }
+
+  function populateCredentialSelect() {
+    const sel = document.getElementById('genCredentialId');
+    sel.innerHTML = '<option value="">Primera credencial disponible</option>';
+    credentials.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c._id;
+      let label = c.type || 'credential';
+      if (c.username) label += `: ${c.username}`;
+      else if (c.label) label += `: ${c.label}`;
+      opt.textContent = label;
+      sel.appendChild(opt);
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Modal: Create/Edit Template
+  // ─────────────────────────────────────────────────────────────────────────
+  function openCreateModal() {
+    editingTemplate = null;
+    document.getElementById('templateModalTitle').textContent = 'Nuevo template';
+    document.getElementById('tplName').value = '';
+    document.getElementById('tplFileType').value = 'conf';
+    document.getElementById('tplDescription').value = '';
+    document.getElementById('tplContent').value = '';
+    document.getElementById('previewContent').textContent = '';
+    const modal = new bootstrap.Modal(document.getElementById('templateModal'));
+    modal.show();
+  }
+
+  async function openEditModal(templateId) {
+    try {
+      const { data } = await axios.get(`/config-templates/api/${templateId}`);
+      console.log('Template loaded:', data);
+      editingTemplate = data;
+      document.getElementById('templateModalTitle').textContent = 'Editar template';
+      document.getElementById('tplName').value = data.name || '';
+      document.getElementById('tplFileType').value = data.file_type || 'txt';
+      document.getElementById('tplDescription').value = data.description || '';
+      document.getElementById('tplContent').value = data.content || '';
+      document.getElementById('previewContent').textContent = '';
+      const modal = new bootstrap.Modal(document.getElementById('templateModal'));
+      modal.show();
+      if (!data.content) {
+        toastError('Este template no tiene contenido. Añade contenido con placeholders.');
+      }
+    } catch (e) {
+      toastError('No se pudo cargar el template');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Format validation
+  // ─────────────────────────────────────────────────────────────────────────
+  function validateContentFormat(content, fileType) {
+    // Replace placeholders with sample values for validation
+    const sampleContent = content
+      .replace(/\{\{\s*device\.custom\.\w+\s*\}\}/g, 'sample_value')
+      .replace(/\{\{\s*device\.\w+\s*\}\}/g, 'sample_value')
+      .replace(/\{\{\s*credential\.\w+\s*\}\}/g, 'sample_value');
+    
+    switch (fileType) {
+      case 'json':
+        try {
+          JSON.parse(sampleContent);
+          return { valid: true };
+        } catch (e) {
+          return { valid: false, error: `JSON inválido: ${e.message}` };
+        }
+      
+      case 'xml':
+        try {
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(sampleContent, 'application/xml');
+          const parseError = doc.querySelector('parsererror');
+          if (parseError) {
+            return { valid: false, error: 'XML inválido: error de sintaxis' };
+          }
+          return { valid: true };
+        } catch (e) {
+          return { valid: false, error: `XML inválido: ${e.message}` };
+        }
+      
+      case 'yaml':
+        // Basic YAML validation - check for common syntax errors
+        const yamlLines = sampleContent.split('\n');
+        for (let i = 0; i < yamlLines.length; i++) {
+          const line = yamlLines[i];
+          // Check for tabs (YAML uses spaces)
+          if (line.match(/^\t/)) {
+            return { valid: false, error: `YAML inválido: línea ${i + 1} usa tabs en lugar de espacios` };
+          }
+          // Check for invalid key-value format (key without colon followed by value)
+          if (line.trim() && !line.trim().startsWith('#') && !line.trim().startsWith('-')) {
+            if (line.includes(':') && line.split(':')[1]?.trim() && !line.match(/:\s/)) {
+              return { valid: false, error: `YAML inválido: línea ${i + 1} - falta espacio después de ':'` };
+            }
+          }
+        }
+        return { valid: true };
+      
+      case 'ini':
+      case 'conf':
+      case 'env':
+        // INI/conf/env are generally permissive, just check for basic structure
+        return { valid: true };
+      
+      case 'sh':
+        // Shell scripts - basic check for shebang or valid commands
+        return { valid: true };
+      
+      default:
+        // txt and others - no validation needed
+        return { valid: true };
+    }
+  }
+
+  async function saveTemplate() {
+    const name = document.getElementById('tplName').value.trim();
+    const fileType = document.getElementById('tplFileType').value;
+    const description = document.getElementById('tplDescription').value.trim();
+    const content = document.getElementById('tplContent').value;
+
+    if (!name) {
+      toastError('El nombre es obligatorio');
+      return;
+    }
+    if (!content) {
+      toastError('El contenido es obligatorio');
+      return;
+    }
+
+    // Validate format based on file type
+    const validation = validateContentFormat(content, fileType);
+    if (!validation.valid) {
+      toastError(validation.error);
+      return;
+    }
+
+    const payload = { name, file_type: fileType, description, content };
+
+    try {
+      if (editingTemplate) {
+        await axios.put(`/config-templates/api/${editingTemplate._id}`, payload);
+        toastSuccess('Template actualizado');
+      } else {
+        await axios.post('/config-templates/api', payload);
+        toastSuccess('Template creado');
+      }
+      bootstrap.Modal.getInstance(document.getElementById('templateModal')).hide();
+      loadTemplates();
+    } catch (e) {
+      const msg = e?.response?.data?.error || 'Error al guardar el template';
+      toastError(msg);
+    }
+  }
+
+  async function updatePreview() {
+    const content = document.getElementById('tplContent').value;
+    if (!content) {
+      document.getElementById('previewContent').textContent = '(sin contenido)';
+      return;
+    }
+    try {
+      const { data } = await axios.post('/config-templates/api/preview', { content });
+      document.getElementById('previewContent').textContent = data.rendered || '(sin resultado)';
+      toastSuccess('Preview actualizado');
+    } catch (e) {
+      document.getElementById('previewContent').textContent = '(error al generar preview)';
+      toastError('Error al generar preview');
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Modal: Generate Config
+  // ─────────────────────────────────────────────────────────────────────────
+  async function openGenerateModal(templateId, templateName) {
+    generatingTemplate = templates.find(t => t._id === templateId) || null;
+    if (!generatingTemplate) {
+      toastError('Template no encontrado');
+      return;
+    }
+    document.getElementById('genTemplateName').value = templateName || generatingTemplate.name || '';
+    document.getElementById('generatedSection').style.display = 'none';
+    document.getElementById('generatedContent').textContent = '';
+    document.getElementById('suggestedFilename').textContent = '';
+    generatedFilename = '';
+
+    await loadDevices();
+    populateDeviceSelect();
+    credentials = [];
+    populateCredentialSelect();
+
+    const modal = new bootstrap.Modal(document.getElementById('generateModal'));
+    modal.show();
+  }
+
+  async function renderConfig() {
+    if (!generatingTemplate) return;
+    const deviceId = document.getElementById('genDeviceId').value;
+    const credentialId = document.getElementById('genCredentialId').value;
+
+    if (!deviceId) {
+      toastError('Selecciona un dispositivo');
+      return;
+    }
+
+    try {
+      const { data } = await axios.post(`/config-templates/api/${generatingTemplate._id}/render`, {
+        device_id: deviceId,
+        credential_id: credentialId || undefined,
+      });
+      const rendered = data.rendered || '';
+      document.getElementById('generatedContent').textContent = rendered || '(El template no tiene contenido o está vacío)';
+      document.getElementById('suggestedFilename').textContent = data.filename || 'config.txt';
+      generatedFilename = data.filename || 'config.txt';
+      document.getElementById('generatedSection').style.display = 'block';
+      if (rendered) {
+        toastSuccess('Configuración generada correctamente');
+      } else {
+        toastError('El template no tiene contenido. Edítalo para añadir contenido.');
+      }
+    } catch (e) {
+      const msg = e?.response?.data?.error || 'Error al generar configuración';
+      toastError(msg);
+    }
+  }
+
+  function copyConfig() {
+    const content = document.getElementById('generatedContent').textContent;
+    if (!content) return;
+    navigator.clipboard.writeText(content).then(() => {
+      toastSuccess('Copiado al portapapeles');
+    }).catch(() => {
+      toastError('No se pudo copiar');
+    });
+  }
+
+  function downloadConfig() {
+    const content = document.getElementById('generatedContent').textContent;
+    if (!content) return;
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = generatedFilename || 'config.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Delete
+  // ─────────────────────────────────────────────────────────────────────────
+  async function deleteTemplate(templateId, templateName) {
+    const ok = confirm(`¿Eliminar el template "${templateName}"? Esta acción no se puede deshacer.`);
+    if (!ok) return;
+    try {
+      await axios.delete(`/config-templates/api/${templateId}`);
+      toastSuccess('Template eliminado');
+      loadTemplates();
+    } catch (e) {
+      const msg = e?.response?.data?.error || 'No se pudo eliminar el template';
+      toastError(msg);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Event handlers
+  // ─────────────────────────────────────────────────────────────────────────
+  document.getElementById('btnNewTemplate').addEventListener('click', openCreateModal);
+  document.getElementById('btnSaveTemplate').addEventListener('click', saveTemplate);
+  document.getElementById('btnPreview').addEventListener('click', updatePreview);
+  document.getElementById('btnRenderConfig').addEventListener('click', renderConfig);
+  document.getElementById('btnCopyConfig').addEventListener('click', copyConfig);
+  document.getElementById('btnDownloadConfig').addEventListener('click', downloadConfig);
+
+  // Device selection change -> load credentials
+  document.getElementById('genDeviceId').addEventListener('change', async (e) => {
+    const deviceId = e.target.value;
+    await loadCredentials(deviceId);
+    populateCredentialSelect();
+  });
+
+  // Search debounce
+  let searchTimer = null;
+  document.getElementById('searchInput').addEventListener('input', () => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(loadTemplates, 250);
+  });
+
+  // Delegated click handlers
+  document.addEventListener('click', (ev) => {
+    const btn = ev.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.getAttribute('data-action');
+    const id = btn.getAttribute('data-id');
+    const name = btn.getAttribute('data-name');
+
+    if (action === 'edit') openEditModal(id);
+    if (action === 'delete') deleteTemplate(id, name);
+    if (action === 'generate') openGenerateModal(id, name);
+  });
+
+  // Initialize
+  loadTemplates();
+})();
+</script>
+{% endblock %}
