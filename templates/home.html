@@ -59,6 +59,37 @@
     </div>
   </div>
 
+  <!-- Expiring Soon Widget (only for authenticated users) -->
+  {% if current_user.is_authenticated %}
+  <div class="container mt-4" id="expiringWidget">
+    <div class="card border-warning" v-if="items.length > 0">
+      <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+        <span><i class="fa-solid fa-clock me-2"></i> Credenciales por expirar</span>
+        <a href="{{ url_for('devices.list_page') }}" class="btn btn-sm btn-outline-dark">Ver todas</a>
+      </div>
+      <ul class="list-group list-group-flush">
+        <li class="list-group-item d-flex justify-content-between align-items-center" v-for="item in items" :key="item.id">
+          <div>
+            <span class="badge me-2" :class="badgeClass(item.expiry_status)" v-text="badgeLabel(item.expiry_status)"></span>
+            <strong v-text="item.device_name"></strong>
+            <span class="text-muted mx-1">—</span>
+            <span v-text="item.label || item.type"></span>
+          </div>
+          <div class="text-end">
+            <small class="text-muted" v-text="formatDate(item.expires_at)"></small>
+            <a :href="'/devices/' + item.device_id + '/credentials/manage'" class="btn btn-sm btn-outline-primary ms-2" title="Ver credencial">
+              <i class="fa-solid fa-arrow-right"></i>
+            </a>
+          </div>
+        </li>
+      </ul>
+    </div>
+    <div v-else-if="loaded && items.length === 0" class="text-center text-muted py-3">
+      <i class="fa-regular fa-circle-check me-1"></i> No hay credenciales próximas a expirar.
+    </div>
+  </div>
+  {% endif %}
+
   <!-- floating orbs background -->
   <div class="orb orb-1"></div>
   <div class="orb orb-2"></div>
@@ -120,4 +151,60 @@
   .btn-outline-secondary{ border-color:#e2e8f0; color:#334155; }
   .btn-outline-secondary:hover{ background:#e2e8f0; color:#111827; }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+{% if current_user.is_authenticated %}
+<script>
+(function(){
+  const { createApp } = Vue;
+  createApp({
+    data(){
+      return {
+        items: [],
+        loaded: false
+      };
+    },
+    mounted(){
+      this.fetchExpiring();
+    },
+    methods: {
+      async fetchExpiring(){
+        try{
+          const { data } = await axios.get('/devices/dashboard/expiring');
+          this.items = data.items || [];
+        }catch(e){
+          console.error('Error loading expiring credentials:', e);
+        }finally{
+          this.loaded = true;
+        }
+      },
+      badgeClass(status){
+        const map = {
+          expired: 'bg-danger',
+          warning: 'bg-warning text-dark',
+          ok: 'bg-success',
+          unknown: 'bg-secondary'
+        };
+        return map[status] || 'bg-secondary';
+      },
+      badgeLabel(status){
+        const map = {
+          expired: 'Expirada',
+          warning: 'Próxima',
+          ok: 'Vigente',
+          unknown: 'Sin fecha'
+        };
+        return map[status] || status;
+      },
+      formatDate(isoStr){
+        if (!isoStr) return '—';
+        const d = new Date(isoStr);
+        return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+      }
+    }
+  }).mount('#expiringWidget');
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify, current_app, render_template, sen
 from flask_login import login_required, current_user
 from bson import ObjectId
 from datetime import datetime
+from datetime import timezone
+from datetime import timedelta
 from .database import db, fs
 from .auth import staff_required, admin_required
 import io
@@ -14,6 +16,7 @@ devices_bp = Blueprint('devices', __name__)
 ALLOWED_NETWORKS = {"WiFi", "LoRaWAN", "Bluetooth", "3G/4G", "NB-IoT", "LTE-M"}
 # Max bytes to store inline (not using inline now for simplicity). Files are stored in GridFS.
 CRED_INLINE_MAX_BYTES = 256 * 1024
+EXPIRY_WARNING_DAYS = 14
 
 
 def _obj_id(id_str: str):
@@ -28,6 +31,47 @@ def _is_owner(user, device: dict) -> bool:
         return False
     owner_id = str(device.get('owner_id') or '')
     return user.role in ['admin', 'staff'] and owner_id == str(user.get_id())
+
+
+def _parse_expires_at(val):
+    """Parse ISO datetime string into UTC-aware datetime."""
+    if not val:
+        return None
+    try:
+        if isinstance(val, datetime):
+            dt = val
+        else:
+            dt = datetime.fromisoformat(str(val).replace('Z', '+00:00'))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
+    except Exception:
+        return None
+
+
+def _compute_expiry_status(expires_at: datetime):
+    """Return expiry status: expired | warning | ok | unknown."""
+    if not expires_at:
+        return 'unknown'
+    now = datetime.now(timezone.utc)
+    if now >= expires_at:
+        return 'expired'
+    if expires_at <= now + timedelta(days=EXPIRY_WARNING_DAYS):
+        return 'warning'
+    return 'ok'
+
+
+def _device_scope_filter(user):
+    """Return Mongo filter dict to restrict devices by user role."""
+    if user.role == 'admin':
+        return {}
+    uid = _obj_id(str(user.get_id()))
+    if user.role == 'staff':
+        return {'owner_id': uid}
+    # normal users: assigned devices
+    return {'$or': [{'assigned_users': uid}, {'assigned_to': uid}]}
 
 
 def _is_assigned(user, device: dict) -> bool:
@@ -366,6 +410,7 @@ def create_device():
         custom_fields = {k.replace(' ', '_'): v for k, v in custom_fields.items() if k}
 
     now = datetime.utcnow()
+
     doc = {
         'name': name,
         'owner_id': owner_oid,
@@ -675,12 +720,26 @@ def list_credentials(device_id):
     if not _can_view_credentials(current_user, device):
         return jsonify({'error': 'Forbidden'}), 403
 
+    # Optional filters
+    expiring_within = request.args.get('expiring_within_days')
+    status_filter = request.args.get('status')  # expired|warning|ok|unknown
+    try:
+        expiring_within_days = int(expiring_within) if expiring_within else None
+        if expiring_within_days is not None and expiring_within_days < 0:
+            expiring_within_days = None
+    except Exception:
+        expiring_within_days = None
+
     creds = list(db.device_logins.find({'device_id': did}))
     out = []
     for c in creds:
         c['_id'] = str(c['_id'])
         c['device_id'] = str(c['device_id'])
         c['type'] = c.get('type') or 'userpass'
+        # Expiry fields
+        expires_at = _parse_expires_at(c.get('expires_at'))
+        c['expires_at'] = expires_at.isoformat() if expires_at else None
+        c['expiry_status'] = _compute_expiry_status(expires_at)
         # Flag encrypted credentials (text or files)
         if c.get('encrypted') or c.get('payload_b64'):
             c['is_encrypted'] = True
@@ -712,7 +771,80 @@ def list_credentials(device_id):
                 })
             c['files'] = norm_files
         out.append(c)
+
+    # Post-filter by expiry status if requested
+    if status_filter in ['expired', 'warning', 'ok', 'unknown']:
+        out = [c for c in out if c.get('expiry_status') == status_filter]
+    if expiring_within_days is not None:
+        now = datetime.now(timezone.utc)
+        limit_dt = now + timedelta(days=expiring_within_days)
+        filtered = []
+        for c in out:
+            ea = _parse_expires_at(c.get('expires_at'))
+            if ea and now <= ea <= limit_dt:
+                filtered.append(c)
+        out = filtered
     return jsonify({'credentials': out})
+
+
+@devices_bp.route('/dashboard/expiring', methods=['GET'])
+@login_required
+def expiring_dashboard():
+    """
+    Small endpoint for dashboard widget: expiring credentials within N days (default: EXPIRY_WARNING_DAYS).
+    Includes expired items as well.
+    Query params:
+      - days: optional int, defaults to EXPIRY_WARNING_DAYS
+      - limit: optional int, defaults to 6 (max 50)
+    """
+    try:
+        days = int(request.args.get('days', EXPIRY_WARNING_DAYS))
+    except Exception:
+        days = EXPIRY_WARNING_DAYS
+    try:
+        limit = int(request.args.get('limit', 6))
+    except Exception:
+        limit = 6
+    limit = max(1, min(limit, 50))
+    if days < 0:
+        days = EXPIRY_WARNING_DAYS
+
+    scope_filter = _device_scope_filter(current_user)
+    devices = list(db.devices.find(scope_filter, {'_id': 1, 'name': 1}))
+    if not devices:
+        return jsonify({'items': []})
+    device_map = {d['_id']: d.get('name', '') for d in devices}
+    device_ids = list(device_map.keys())
+
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(days=days)
+    base_query = {
+        'device_id': {'$in': device_ids},
+        'expires_at': {'$ne': None},
+    }
+    # Fetch a bit more to allow filtering in app layer
+    docs = list(db.device_logins.find(base_query).sort('expires_at', 1).limit(limit * 3))
+
+    items = []
+    for c in docs:
+        expires_at = _parse_expires_at(c.get('expires_at'))
+        status = _compute_expiry_status(expires_at)
+        if status not in ['expired', 'warning']:
+            continue
+        if status == 'warning' and expires_at and expires_at > horizon:
+            continue
+        items.append({
+            'id': str(c['_id']),
+            'device_id': str(c.get('device_id')),
+            'device_name': device_map.get(c.get('device_id')) or '',
+            'type': c.get('type') or 'userpass',
+            'label': c.get('label') or (c.get('username') if c.get('type') == 'userpass' else None),
+            'expires_at': expires_at.isoformat() if expires_at else None,
+            'expiry_status': status,
+        })
+        if len(items) >= limit:
+            break
+    return jsonify({'items': items})
 
 
 @devices_bp.route('/<device_id>/credentials/manage', methods=['GET'])
@@ -792,6 +924,7 @@ def upsert_credential(device_id):
 
     data = request.get_json(silent=True) or {}
     cred_type = (data.get('type') or 'userpass').strip()
+    expires_at = _parse_expires_at(data.get('expires_at'))
 
     now = datetime.utcnow()
 
@@ -841,6 +974,10 @@ def upsert_credential(device_id):
             doc = db.device_logins.find_one({'_id': ins.inserted_id})
         doc['_id'] = str(doc['_id'])
         doc['device_id'] = str(doc['device_id'])
+        if expires_at:
+            db.device_logins.update_one({'_id': ObjectId(doc['_id'])}, {'$set': {'expires_at': expires_at}})
+            doc['expires_at'] = expires_at.isoformat()
+            doc['expiry_status'] = _compute_expiry_status(expires_at)
         return jsonify({'credential': doc}), 200
 
     elif cred_type == 'token':
@@ -856,6 +993,7 @@ def upsert_credential(device_id):
             'encrypted': True,
             'payload_b64': payload_b64,
             'meta': meta,
+            'expires_at': expires_at,
             'created_at': now,
             'created_by': str(current_user.get_id()),
             'updated_at': now,
@@ -864,6 +1002,9 @@ def upsert_credential(device_id):
         doc = db.device_logins.find_one({'_id': ins.inserted_id})
         doc['_id'] = str(doc['_id'])
         doc['device_id'] = str(doc['device_id'])
+        if expires_at:
+            doc['expires_at'] = expires_at.isoformat()
+            doc['expiry_status'] = _compute_expiry_status(expires_at)
         return jsonify({'credential': doc}), 200
 
     else:
@@ -901,6 +1042,7 @@ def upload_credential_files(device_id):
 
     label = (request.form.get('label') or '').strip() or None
     note = request.form.get('note')
+    expires_at = _parse_expires_at(request.form.get('expires_at'))
     # Client-side encryption support
     encrypted_flag = str(request.form.get('encrypted') or '').lower() in ['1', 'true', 'yes']
     # Optional encrypted credential payload for label/note
@@ -968,6 +1110,7 @@ def upload_credential_files(device_id):
         'device_id': did,
         'type': 'certificate',
         'files': saved,
+        'expires_at': expires_at,
         'created_at': now,
         'created_by': str(current_user.get_id()),
         'updated_at': now,
@@ -1019,6 +1162,7 @@ def upsert_credential_encrypted(device_id):
     cred_type = (data.get('type') or '').strip()
     payload_b64 = data.get('payload_b64')
     meta = data.get('meta')
+    expires_at = _parse_expires_at(data.get('expires_at'))
     if cred_type not in ['userpass', 'token']:
         return jsonify({'error': 'Unsupported type for encrypted endpoint'}), 400
     if not payload_b64 or not isinstance(payload_b64, str):
@@ -1033,6 +1177,7 @@ def upsert_credential_encrypted(device_id):
         'encrypted': True,
         'payload_b64': payload_b64,
         'meta': meta,
+        'expires_at': expires_at,
         'created_at': now,
         'created_by': str(current_user.get_id()),
         'updated_at': now,
