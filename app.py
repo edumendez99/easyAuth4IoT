@@ -201,4 +201,12 @@ def health():
 if __name__ == '__main__':
     host = CFG.get('server_host') or '0.0.0.0'
     port = int(CFG.get('server_port') or 5000)
-    app.run(debug=False, host=host, port=port)
+    debug_mode = app.config.get('DEBUG_MODE', False)
+    
+    if debug_mode:
+        # Enable template auto-reload in debug mode
+        app.config['TEMPLATES_AUTO_RELOAD'] = True
+        app.jinja_env.auto_reload = True
+        print(f"🔄 Live reload enabled - watching templates for changes")
+    
+    app.run(debug=debug_mode, host=host, port=port, use_reloader=debug_mode, extra_files=None)
