@@ -448,3 +448,160 @@ def api_users_by_ids():
     for u in users:
         u['_id'] = str(u['_id'])
     return jsonify({'users': users})
+
+
+@user_bp.route('/api/<user_id>/graph', methods=['GET'])
+@login_required
+@staff_required
+def get_user_graph(user_id):
+    """
+    Get graph data for D3.js force-directed visualization.
+    Returns nodes (user, devices, credentials) and links.
+    """
+    try:
+        uid = ObjectId(user_id)
+    except Exception:
+        return jsonify({'error': 'Invalid user_id'}), 400
+
+    user = db.users.find_one({'_id': uid}, {'password': 0})
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    nodes = []
+    links = []
+
+    # User node
+    user_node_id = f"user_{user_id}"
+    nodes.append({
+        'id': user_node_id,
+        'type': 'user',
+        'label': user.get('username', 'Unknown'),
+        'data': {
+            'email': user.get('email'),
+            'role': user.get('role'),
+            'is_active': user.get('is_active', True),
+            'created_at': user.get('created_at').isoformat() if user.get('created_at') else None
+        }
+    })
+
+    # Devices where user is assigned or owner
+    devices = list(db.devices.find({
+        '$or': [
+            {'assigned_users': uid},
+            {'assigned_to': uid},
+            {'owner_id': uid}
+        ]
+    }))
+
+    for device in devices:
+        device_id = str(device['_id'])
+        device_node_id = f"device_{device_id}"
+        
+        nodes.append({
+            'id': device_node_id,
+            'type': 'device',
+            'label': device.get('name', 'Unknown'),
+            'data': {
+                'manufacturer': device.get('manufacturer'),
+                'networks': device.get('network_types', []),
+                'serial_number': device.get('serial_number')
+            }
+        })
+
+        # Determine relationship
+        is_owner = str(device.get('owner_id')) == user_id
+        links.append({
+            'source': user_node_id,
+            'target': device_node_id,
+            'relation': 'owner' if is_owner else 'assigned'
+        })
+
+        # Credentials for this device
+        credentials = list(db.device_logins.find({'device_id': device['_id']}))
+        for cred in credentials:
+            cred_id = str(cred['_id'])
+            cred_node_id = f"cred_{cred_id}"
+            
+            nodes.append({
+                'id': cred_node_id,
+                'type': 'credential',
+                'label': cred.get('label') or cred.get('type', 'userpass').upper(),
+                'data': {
+                    'cred_type': cred.get('type', 'userpass'),
+                    'expires_at': cred.get('expires_at').isoformat() if cred.get('expires_at') else None,
+                    'is_encrypted': bool(cred.get('encrypted') or cred.get('payload_b64'))
+                }
+            })
+            links.append({
+                'source': device_node_id,
+                'target': cred_node_id,
+                'relation': 'has_credential'
+            })
+
+    # Stats
+    vault_count = db.vault_items.count_documents({'owner_id': uid})
+    
+    return jsonify({
+        'nodes': nodes,
+        'links': links,
+        'stats': {
+            'devices': len(devices),
+            'credentials': sum(1 for n in nodes if n['type'] == 'credential'),
+            'vault_items': vault_count
+        }
+    })
+
+
+@user_bp.route('/api/<user_id>', methods=['PUT'])
+@login_required
+@staff_required
+def update_user(user_id):
+    """Update user data (admin/staff)."""
+    try:
+        uid = ObjectId(user_id)
+    except Exception:
+        return jsonify({'error': 'Invalid user_id'}), 400
+
+    if user_id == str(current_user.get_id()):
+        return jsonify({'error': 'Cannot modify your own account here'}), 400
+
+    user = db.users.find_one({'_id': uid})
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    if current_user.role == 'staff' and user.get('role') == 'admin':
+        return jsonify({'error': 'Staff cannot modify admin users'}), 403
+
+    data = request.get_json(silent=True) or {}
+    updates = {}
+
+    if 'email' in data:
+        email = (data['email'] or '').strip()
+        if email and email != user.get('email'):
+            if db.users.find_one({'email': email, '_id': {'$ne': uid}}):
+                return jsonify({'error': 'Email already exists'}), 400
+            updates['email'] = email
+
+    if 'username' in data:
+        username = (data['username'] or '').strip()
+        if username and username != user.get('username'):
+            if db.users.find_one({'username': username, '_id': {'$ne': uid}}):
+                return jsonify({'error': 'Username already exists'}), 400
+            updates['username'] = username
+
+    if 'role' in data and current_user.role == 'admin':
+        role = data['role']
+        if role in ['admin', 'staff', 'user']:
+            updates['role'] = role
+
+    if not updates:
+        return jsonify({'error': 'No valid fields to update'}), 400
+
+    updates['updated_at'] = datetime.utcnow()
+    updates['updated_by'] = str(current_user.get_id())
+    db.users.update_one({'_id': uid}, {'$set': updates})
+    
+    updated = db.users.find_one({'_id': uid}, {'password': 0})
+    updated['_id'] = str(updated['_id'])
+    return jsonify({'user': updated})
+
