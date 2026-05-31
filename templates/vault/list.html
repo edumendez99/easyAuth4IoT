@@ -1,5 +1,90 @@
 {% extends 'base.html' %}
 {% block title %}Contraseñas{% endblock %}
+
+{% block extra_css %}
+<style>
+  .totp-timer-container {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 0;
+  }
+
+  .totp-ring-wrapper {
+    position: relative;
+    width: 70px;
+    height: 70px;
+    flex-shrink: 0;
+  }
+
+  .totp-ring {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .totp-ring-bg {
+    fill: none;
+    stroke: #e5e7eb;
+    stroke-width: 6;
+  }
+
+  .totp-ring-progress {
+    fill: none;
+    stroke-width: 6;
+    stroke-linecap: round;
+    transition: stroke 0.3s ease, stroke-dasharray 0.5s linear;
+  }
+
+  .totp-seconds {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #64748b;
+  }
+
+  .totp-code-display {
+    font-size: 2rem;
+    font-weight: 700;
+    font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+    letter-spacing: 4px;
+    color: var(--fz-text);
+  }
+
+  .totp-account {
+    font-size: 0.8rem;
+    color: #64748b;
+  }
+
+  .totp-color-green {
+    stroke: #22c55e;
+  }
+
+  .totp-color-orange {
+    stroke: #f59e0b;
+  }
+
+  .totp-color-red {
+    stroke: #ef4444;
+  }
+
+  .totp-text-green {
+    color: #22c55e;
+  }
+
+  .totp-text-orange {
+    color: #f59e0b;
+  }
+
+  .totp-text-red {
+    color: #ef4444;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container py-4" id="vaultApp">
   <div class="d-flex justify-content-between align-items-center mb-3">
@@ -395,16 +480,16 @@
     <div v-else-if="items.length===0" class="text-muted">No hay elementos.</div>
     <div class="row g-3">
       <div class="col-12 col-md-6 col-lg-4" v-for="it in filteredItems" :key="it._id">
-        <div class="card h-100 vault-item-card clickable-card" :data-item-id="it._id">
+        <div class="card h-100 vault-item-card clickable-card" :class="encryptionCardClass(it)" :data-item-id="it._id">
           <div class="card-body d-flex flex-column">
             <div class="d-flex justify-content-between align-items-start">
               <div>
                 <h5 class="card-title mb-0">
-                  <span v-text="displayTitle(it)"></span>
+                  <i class="fa-solid fa-lock text-success" title="Cifrado Local" v-if="it.is_encrypted && (!it.meta || !it.meta.server)"></i>
+                  <i class="fa-solid fa-lock text-info text-dark" title="Cifrado Servidor" v-else-if="it.is_encrypted && it.meta && it.meta.server"></i>
+                  <i class="fa-solid fa-unlock text-secondary" title="Sin cifrar" v-else></i>
+                  <span class="ms-2" v-text="displayTitle(it)"></span>
                   <span class="ms-2 badge bg-secondary" v-text="it.type"></span>
-                  <span class="ms-2 badge bg-info text-dark" v-if="it.is_encrypted && it.meta && it.meta.server">cifrado
-                    servidor</span>
-                  <span class="ms-2 badge bg-warning text-dark" v-else-if="it.is_encrypted">cifrado local</span>
                 </h5>
               </div>
             </div>
@@ -445,7 +530,8 @@
 
               <!-- Encrypted rendering: require decryption -->
               <template v-else>
-                <div class="mb-2 text-muted">Contenido cifrado.</div>
+                <div class="mb-2 text-muted" v-if="!it.meta || !it.meta.server">Contenido cifrado localmente.</div>
+                <div class="mb-2 text-muted" v-else>Contenido cifrado en servidor.</div>
                 <div v-if="it._dec">
                   <template v-if="it.type==='password'">
                     <div class="mb-1"><span class="text-muted">Usuario:</span> <code v-text="it._dec.username"></code>
@@ -486,10 +572,32 @@
                     </ul>
                   </template>
                   <template v-else-if="it.type==='totp'">
-                    <div class="mb-2"><span class="text-muted">Cuenta:</span> <span
-                        v-text="(it._dec.issuer||'') + (it._dec.account? (' / '+it._dec.account):'')"></span></div>
-                    <div class="display-6" v-text="totpCodeFor(it)"></div>
-                    <div class="small text-muted">Actualiza cada <span v-text="it._dec.period||30"></span>s</div>
+                    <!-- Server-encrypted TOTP with circular timer -->
+                    <template v-if="it.meta && it.meta.server">
+                      <div class="totp-timer-container">
+                        <div class="totp-ring-wrapper">
+                          <svg class="totp-ring" viewBox="0 0 100 100">
+                            <circle class="totp-ring-bg" cx="50" cy="50" r="44" />
+                            <circle class="totp-ring-progress" :class="totpTimerColorClass(it)" cx="50" cy="50" r="44"
+                              :stroke-dasharray="totpProgress(it)" />
+                          </svg>
+                          <div class="totp-seconds" :class="totpTimerTextClass(it)"
+                            v-text="totpSecondsRemaining(it) + 's'"></div>
+                        </div>
+                        <div>
+                          <div class="totp-code-display" v-text="totpCodeFor(it)"></div>
+                          <div class="totp-account"
+                            v-text="(it._dec.issuer||'') + (it._dec.account ? ' / '+it._dec.account : '')"></div>
+                        </div>
+                      </div>
+                    </template>
+                    <!-- Client-encrypted TOTP (simple display) -->
+                    <template v-else>
+                      <div class="mb-2"><span class="text-muted">Cuenta:</span> <span
+                          v-text="(it._dec.issuer||'') + (it._dec.account? (' / '+it._dec.account):'')"></span></div>
+                      <div class="display-6" v-text="totpCodeFor(it)"></div>
+                      <div class="small text-muted">Actualiza cada <span v-text="it._dec.period||30"></span>s</div>
+                    </template>
                   </template>
                   <template v-else>
                     <pre class="small bg-light p-2" style="white-space: pre-wrap; word-break: break-word;"
@@ -502,24 +610,20 @@
                       v-text="domainOf(it._dec.url)"></a>
                   </div>
                 </div>
-                <div v-else>
-                  <button v-if="it.meta && it.meta.server" class="btn btn-sm btn-outline-primary"
-                    @click="revealServer(it)"><i class="fa-solid fa-eye"></i> Revelar</button>
-                  <button v-else class="btn btn-sm btn-outline-primary" @click="decryptItem(it)"><i
-                      class="fa-solid fa-unlock-keyhole"></i> Desencriptar</button>
-                </div>
               </template>
             </div>
 
-            <div class="mt-auto d-flex justify-content-between align-items-center">
+            <div class="mt-auto pt-3 border-top d-flex justify-content-between align-items-center">
               {% if debug_mode %}
               <div class="text-muted small" v-text="it._id"></div>
+              {% else %}
+              <div></div>
               {% endif %}
-              <div>
-                <button class="btn btn-sm btn-outline-dark me-2" @click="openEdit(it)"><i class="fa-solid fa-pen"></i>
-                  Editar</button>
-                <button class="btn btn-sm btn-outline-danger" @click="deleteItem(it)"><i class="fa-solid fa-trash"></i>
-                  Eliminar</button>
+              <div class="d-flex gap-2">
+                <button v-if="it.is_encrypted && !it._dec && (!it.meta || !it.meta.server)" class="btn btn-sm btn-success" @click.stop="decryptItem(it)"><i class="fa-solid fa-unlock-keyhole"></i> Desencriptar local</button>
+                <button v-if="it.is_encrypted && !it._dec && (it.meta && it.meta.server)" class="btn btn-sm btn-info text-dark" @click.stop="revealServer(it)"><i class="fa-solid fa-eye"></i> Revelar servidor</button>
+                <button class="btn btn-sm btn-outline-dark" @click.stop="openEdit(it)" title="Editar"><i class="fa-solid fa-pen"></i></button>
+                <button class="btn btn-sm btn-outline-danger" @click.stop="deleteItem(it)" title="Eliminar"><i class="fa-solid fa-trash"></i></button>
               </div>
             </div>
           </div>
@@ -695,6 +799,11 @@
         }
       },
       methods: {
+        encryptionCardClass(it) {
+          if (!it.is_encrypted) return '';
+          if (it.meta && it.meta.server) return 'border border-info border-2';
+          return 'border border-success border-2';
+        },
         pretty(o) { try { return JSON.stringify(o, null, 2); } catch (e) { return String(o); } },
         displayTitle(it) {
           if (!it) return '';
@@ -967,6 +1076,38 @@
             }
             return (it._lastTotp && it._lastTotp.code) ? it._lastTotp.code : '------';
           } catch (e) { return '------'; }
+        },
+        // TOTP Timer methods for circular progress
+        totpSecondsRemaining(it) {
+          try {
+            const src = it._dec || {};
+            const period = Math.max(15, parseInt(src.period || 30, 10));
+            const now = Math.floor(Date.now() / 1000);
+            const elapsed = now % period;
+            return period - elapsed;
+          } catch (e) { return 0; }
+        },
+        totpProgress(it) {
+          try {
+            const src = it._dec || {};
+            const period = Math.max(15, parseInt(src.period || 30, 10));
+            const remaining = this.totpSecondsRemaining(it);
+            const circumference = 2 * Math.PI * 44; // r=44
+            const progress = (remaining / period) * circumference;
+            return `${progress} ${circumference}`;
+          } catch (e) { return '0 276.46'; }
+        },
+        totpTimerColorClass(it) {
+          const remaining = this.totpSecondsRemaining(it);
+          if (remaining <= 5) return 'totp-color-red';
+          if (remaining <= 10) return 'totp-color-orange';
+          return 'totp-color-green';
+        },
+        totpTimerTextClass(it) {
+          const remaining = this.totpSecondsRemaining(it);
+          if (remaining <= 5) return 'totp-text-red';
+          if (remaining <= 10) return 'totp-text-orange';
+          return 'totp-text-green';
         },
         async deleteItem(it) {
           const ok = confirm('¿Eliminar este elemento?'); if (!ok) return;

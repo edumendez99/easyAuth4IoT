@@ -1,11 +1,12 @@
-from flask import Blueprint, request, jsonify, render_template
+import io
+from flask import Blueprint, request, jsonify, render_template, send_file
 from flask_login import login_required, current_user
 from bson import ObjectId
 from datetime import datetime
 import re
 import json
 import xml.etree.ElementTree as ET
-from .database import db
+from .database import db, fs
 from .auth import staff_required
 
 
@@ -78,12 +79,12 @@ def _validate_content_format(content: str, file_type: str) -> tuple:
             return (False, f'XML inválido: {str(e)}')
     
     elif file_type == 'yaml':
-        # Basic YAML validation
-        lines = sample_content.split('\n')
-        for i, line in enumerate(lines, 1):
-            if line.startswith('\t'):
-                return (False, f'YAML inválido: línea {i} usa tabs en lugar de espacios')
-        return (True, None)
+        try:
+            import yaml as _yaml
+            _yaml.safe_load(sample_content)
+            return (True, None)
+        except Exception as e:
+            return (False, f'YAML inválido: {str(e)}')
     
     # ini, conf, env, sh, txt - no strict validation
     return (True, None)
@@ -260,7 +261,37 @@ def list_templates():
             t['owner_username'] = owner_map[d['owner_id']]
         templates.append(t)
     
-    return jsonify({'templates': templates})
+    # Also fetch generic file entries (same access rules)
+    file_query = {} if current_user.role == 'admin' else {'owner_id': _obj_id(uid)}
+    if q:
+        rx_f = {'$regex': q, '$options': 'i'}
+        name_filter = {'$or': [{'name': rx_f}, {'filename': rx_f}]}
+        file_query = {'$and': [file_query, name_filter]} if file_query else name_filter
+
+    file_docs = list(db.config_template_files.find(file_query).sort('uploaded_at', -1))
+
+    # Enrich file entries with owner usernames (reuse owner_map, fetch missing)
+    missing_ids = {d['owner_id'] for d in file_docs if d.get('owner_id') and d['owner_id'] not in owner_map}
+    if missing_ids:
+        for u in db.users.find({'_id': {'$in': list(missing_ids)}}, {'_id': 1, 'username': 1}):
+            owner_map[u['_id']] = u.get('username')
+
+    files = []
+    for d in file_docs:
+        files.append({
+            '_id': str(d['_id']),
+            'kind': 'file',
+            'name': d.get('name') or d.get('filename', ''),
+            'label': d.get('label') or '',
+            'filename': d.get('filename', ''),
+            'size': d.get('size', 0),
+            'content_type': d.get('content_type', 'application/octet-stream'),
+            'owner_id': str(d['owner_id']) if d.get('owner_id') else '',
+            'owner_username': owner_map.get(d.get('owner_id'), ''),
+            'uploaded_at': d.get('uploaded_at').isoformat() if d.get('uploaded_at') else None,
+        })
+
+    return jsonify({'templates': templates, 'files': files})
 
 
 @config_templates_bp.route('/api', methods=['POST'])
@@ -549,5 +580,95 @@ def preview_template():
             return str(value) if value is not None else ''
         
         rendered = re.sub(pattern, replacer, content)
-    
+
     return jsonify({'rendered': rendered})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Generic config file attachments
+# ─────────────────────────────────────────────────────────────────────────────
+
+@config_templates_bp.route('/api/files', methods=['POST'])
+@login_required
+@staff_required
+def upload_config_file():
+    f = request.files.get('file')
+    if not f or f.filename == '':
+        return jsonify({'error': 'File is required'}), 400
+
+    name = (request.form.get('name') or '').strip() or f.filename
+    label = (request.form.get('label') or '').strip() or None
+    data = f.read()
+    content_type = f.content_type or 'application/octet-stream'
+    filename = f.filename
+
+    gfs_id = fs.put(data, filename=filename, content_type=content_type,
+                    metadata={'type': 'config_template_file', 'owner': str(current_user.get_id())})
+
+    now = datetime.utcnow()
+    doc = {
+        'name': name,
+        'label': label,
+        'filename': filename,
+        'gfs_id': gfs_id,
+        'size': len(data),
+        'content_type': content_type,
+        'owner_id': _obj_id(str(current_user.get_id())),
+        'uploaded_by': str(current_user.get_id()),
+        'uploaded_at': now,
+    }
+    inserted = db.config_template_files.insert_one(doc)
+    return jsonify({'_id': str(inserted.inserted_id), 'name': name, 'filename': filename}), 201
+
+
+@config_templates_bp.route('/api/files/<file_id>', methods=['GET'])
+@login_required
+@staff_required
+def download_config_file(file_id):
+    fid = _obj_id(file_id)
+    if not fid:
+        return jsonify({'error': 'Invalid file_id'}), 400
+
+    meta = db.config_template_files.find_one({'_id': fid})
+    if not meta:
+        return jsonify({'error': 'File not found'}), 404
+
+    uid = str(current_user.get_id())
+    if current_user.role != 'admin' and str(meta.get('owner_id')) != uid:
+        return jsonify({'error': 'Forbidden'}), 403
+
+    try:
+        gridout = fs.get(meta['gfs_id'])
+    except Exception:
+        return jsonify({'error': 'File data not found'}), 404
+
+    return send_file(
+        io.BytesIO(gridout.read()),
+        mimetype=meta.get('content_type') or 'application/octet-stream',
+        as_attachment=True,
+        download_name=meta.get('filename') or 'download',
+    )
+
+
+@config_templates_bp.route('/api/files/<file_id>', methods=['DELETE'])
+@login_required
+@staff_required
+def delete_config_file(file_id):
+    fid = _obj_id(file_id)
+    if not fid:
+        return jsonify({'error': 'Invalid file_id'}), 400
+
+    meta = db.config_template_files.find_one({'_id': fid})
+    if not meta:
+        return jsonify({'error': 'File not found'}), 404
+
+    uid = str(current_user.get_id())
+    if current_user.role != 'admin' and str(meta.get('owner_id')) != uid:
+        return jsonify({'error': 'Forbidden'}), 403
+
+    try:
+        fs.delete(meta['gfs_id'])
+    except Exception:
+        pass
+    db.config_template_files.delete_one({'_id': fid})
+    return jsonify({'ok': True})

@@ -1514,6 +1514,137 @@ def _serialize_log(log: dict) -> dict:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Device generic file attachments
+# ─────────────────────────────────────────────────────────────────────────────
+
+@devices_bp.route('/<device_id>/files', methods=['GET'])
+@login_required
+def list_device_files(device_id):
+    did = _obj_id(device_id)
+    if not did:
+        return jsonify({'error': 'Invalid device_id'}), 400
+    device = db.devices.find_one({'_id': did})
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    if not _can_view_credentials(current_user, device):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    docs = list(db.device_files.find({'device_id': did}).sort('uploaded_at', -1))
+    result = []
+    for d in docs:
+        result.append({
+            '_id': str(d['_id']),
+            'filename': d.get('filename', ''),
+            'label': d.get('label') or '',
+            'size': d.get('size', 0),
+            'content_type': d.get('content_type', 'application/octet-stream'),
+            'uploaded_by': d.get('uploaded_by', ''),
+            'uploaded_at': d.get('uploaded_at').isoformat() if d.get('uploaded_at') else None,
+        })
+    return jsonify({'files': result})
+
+
+@devices_bp.route('/<device_id>/files', methods=['POST'])
+@login_required
+@staff_required
+def upload_device_file(device_id):
+    did = _obj_id(device_id)
+    if not did:
+        return jsonify({'error': 'Invalid device_id'}), 400
+    device = db.devices.find_one({'_id': did})
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    if not _can_edit_device(current_user, device):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    f = request.files.get('file')
+    if not f or f.filename == '':
+        return jsonify({'error': 'File is required'}), 400
+
+    label = (request.form.get('label') or '').strip() or None
+    data = f.read()
+    content_type = f.content_type or 'application/octet-stream'
+    filename = f.filename
+
+    gfs_id = fs.put(data, filename=filename, content_type=content_type,
+                    metadata={'device_id': str(did), 'type': 'attachment'})
+
+    now = datetime.utcnow()
+    doc = {
+        'device_id': did,
+        'filename': filename,
+        'label': label,
+        'gfs_id': gfs_id,
+        'size': len(data),
+        'content_type': content_type,
+        'uploaded_by': str(current_user.get_id()),
+        'uploaded_at': now,
+    }
+    inserted = db.device_files.insert_one(doc)
+    return jsonify({'_id': str(inserted.inserted_id), 'filename': filename}), 201
+
+
+@devices_bp.route('/<device_id>/files/<file_id>', methods=['GET'])
+@login_required
+def download_device_file(device_id, file_id):
+    did = _obj_id(device_id)
+    if not did:
+        return jsonify({'error': 'Invalid device_id'}), 400
+    device = db.devices.find_one({'_id': did})
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    if not _can_view_credentials(current_user, device):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    fid = _obj_id(file_id)
+    if not fid:
+        return jsonify({'error': 'Invalid file_id'}), 400
+    meta = db.device_files.find_one({'_id': fid, 'device_id': did})
+    if not meta:
+        return jsonify({'error': 'File not found'}), 404
+
+    try:
+        gridout = fs.get(meta['gfs_id'])
+    except Exception:
+        return jsonify({'error': 'File data not found'}), 404
+
+    return send_file(
+        io.BytesIO(gridout.read()),
+        mimetype=meta.get('content_type') or 'application/octet-stream',
+        as_attachment=True,
+        download_name=meta.get('filename') or 'download',
+    )
+
+
+@devices_bp.route('/<device_id>/files/<file_id>', methods=['DELETE'])
+@login_required
+@staff_required
+def delete_device_file(device_id, file_id):
+    did = _obj_id(device_id)
+    if not did:
+        return jsonify({'error': 'Invalid device_id'}), 400
+    device = db.devices.find_one({'_id': did})
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+    if not _can_edit_device(current_user, device):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    fid = _obj_id(file_id)
+    if not fid:
+        return jsonify({'error': 'Invalid file_id'}), 400
+    meta = db.device_files.find_one({'_id': fid, 'device_id': did})
+    if not meta:
+        return jsonify({'error': 'File not found'}), 404
+
+    try:
+        fs.delete(meta['gfs_id'])
+    except Exception:
+        pass
+    db.device_files.delete_one({'_id': fid})
+    return jsonify({'ok': True})
+
+
 def _can_edit_log(user, log: dict, device: dict) -> bool:
     """Check if user can edit/delete a log entry."""
     if user.role == 'admin':

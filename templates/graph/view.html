@@ -1,0 +1,403 @@
+{% extends 'base.html' %}
+{% block title %}Grafo de Relaciones{% endblock %}
+{% block extra_css %}
+<style>
+  body { overflow: hidden; }
+  #graphPage {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px); /* below navbar */
+  }
+  /* ── Header bar ── */
+  #graphHeader {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+    background: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    flex-shrink: 0;
+  }
+  #graphHeader h5 { margin: 0; white-space: nowrap; }
+  #graphStats { display: flex; gap: 1rem; flex-wrap: wrap; }
+  .stat-chip {
+    font-size: 0.8rem;
+    padding: 2px 10px;
+    border-radius: 999px;
+    color: #fff;
+    white-space: nowrap;
+  }
+  #graphSearchInput { max-width: 220px; }
+
+  /* ── Main area ── */
+  #graphMain {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── Filter panel ── */
+  #filterPanel {
+    width: 190px;
+    flex-shrink: 0;
+    background: #fff;
+    border-right: 1px solid #dee2e6;
+    overflow-y: auto;
+    padding: 0.75rem;
+  }
+  #filterPanel h6 { font-size: 0.8rem; text-transform: uppercase; color: #6c757d; margin-bottom: 0.5rem; }
+  .filter-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.35rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .filter-dot {
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  #filterPanel .count-badge {
+    margin-left: auto;
+    font-size: 0.7rem;
+    background: #e9ecef;
+    padding: 1px 6px;
+    border-radius: 999px;
+  }
+
+  /* ── Graph container ── */
+  #graphContainer {
+    flex: 1;
+    background: #f1f5f9;
+    position: relative;
+    overflow: hidden;
+  }
+  #graphContainer svg { display: block; }
+
+  /* ── Tooltip (from graph.js) ── */
+  .graph-tooltip {
+    position: absolute;
+    background: #1e293b;
+    color: #f1f5f9;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    pointer-events: none;
+    z-index: 100;
+    min-width: 160px;
+    max-width: 260px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  .graph-tooltip .tt-head { font-weight: 700; margin-bottom: 3px; }
+  .graph-tooltip .tt-type { font-size: 10px; color: #94a3b8; margin-bottom: 5px; letter-spacing: 0.05em; }
+  .graph-tooltip .tt-body div { margin-bottom: 2px; }
+  .graph-tooltip .lbl { color: #94a3b8; }
+
+  /* ── Zoom controls ── */
+  #zoomControls {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 10;
+  }
+  #zoomControls button {
+    width: 32px; height: 32px;
+    padding: 0;
+    font-size: 14px;
+    border-radius: 6px;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+    cursor: pointer;
+  }
+  #zoomControls button:hover { background: #f8f9fa; }
+
+  /* ── Empty state ── */
+  #emptyState {
+    display: none;
+    position: absolute;
+    inset: 0;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    color: #94a3b8;
+    font-size: 1rem;
+  }
+  #emptyState.visible { display: flex; }
+
+  /* ── Search highlight ── */
+  .node-dimmed circle { opacity: 0.2; }
+  .node-dimmed text { opacity: 0.2; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="graphPage">
+
+  <!-- Header -->
+  <div id="graphHeader">
+    <h5><i class="fa-solid fa-diagram-project me-2"></i>Grafo de relaciones</h5>
+    <div id="graphStats">
+      <span class="stat-chip" style="background:#6c757d" id="statLoading">Cargando...</span>
+    </div>
+    <input type="text" id="graphSearchInput" class="form-control form-control-sm" placeholder="Buscar nodo...">
+    <div class="ms-auto d-flex gap-2">
+      <button class="btn btn-sm btn-outline-secondary" id="btnFitGraph" title="Ajustar vista">
+        <i class="fa-solid fa-maximize"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main: filter + graph -->
+  <div id="graphMain">
+
+    <!-- Filter panel -->
+    <div id="filterPanel">
+      <h6>Tipos de nodo</h6>
+      <div id="filterList"></div>
+      <hr class="my-2">
+      <h6>Relaciones</h6>
+      <div id="legendLinks"></div>
+    </div>
+
+    <!-- Graph area -->
+    <div id="graphContainer">
+      <div id="emptyState">
+        <i class="fa-solid fa-circle-nodes fa-3x mb-3"></i>
+        <span>No hay datos para mostrar</span>
+      </div>
+      <div id="zoomControls">
+        <button id="btnZoomIn" title="Zoom +"><i class="fa-solid fa-plus"></i></button>
+        <button id="btnZoomOut" title="Zoom -"><i class="fa-solid fa-minus"></i></button>
+        <button id="btnZoomReset" title="Reset"><i class="fa-solid fa-arrows-to-dot"></i></button>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="{{ url_for('static', filename='js/graph.js') }}"></script>
+<script>
+(function () {
+  // shape: 'circle' | 'rect' | 'diamond' | 'hexagon' | 'doc'
+  const TYPE_META = {
+    user_admin:      { label: 'Admin',               color: '#ef4444', shape: 'circle',  letter: 'A' },
+    user_staff:      { label: 'Staff',               color: '#f97316', shape: 'circle',  letter: 'S' },
+    user:            { label: 'Usuario',             color: '#009f8c', shape: 'circle',  letter: 'U' },
+    device:          { label: 'Dispositivo',         color: '#6366f1', shape: 'rect',    letter: 'D' },
+    credential:      { label: 'Credencial',          color: '#f59e0b', shape: 'diamond', letter: 'K' },
+    device_file:     { label: 'Archivo dispositivo', color: '#8b5cf6', shape: 'doc',     letter: 'F' },
+    config_template: { label: 'Config Template',    color: '#22c55e', shape: 'hexagon', letter: 'T' },
+    config_file:     { label: 'Archivo config',     color: '#16a34a', shape: 'doc',     letter: 'C' },
+  };
+  const LINK_META = {
+    owner:           { label: 'Propietario',      color: '#009f8c' },
+    assigned:        { label: 'Asignado',         color: '#6366f1' },
+    has_credential:  { label: 'Credencial',       color: '#f59e0b' },
+    has_file:        { label: 'Archivo',          color: '#8b5cf6' },
+    owns_template:   { label: 'Template',         color: '#22c55e' },
+    owns_config_file:{ label: 'Archivo config',   color: '#16a34a' },
+  };
+
+  let graphData = null;
+  let graphInstance = null;
+  let hiddenTypes = new Set();
+  let searchQuery = '';
+
+  const container = document.getElementById('graphContainer');
+
+  // ── Shape mini SVG for legend ─────────────────────────────────────────
+  function shapeIcon(shape, color, letter) {
+    const size = 20;
+    const s = size / 2;
+    let shapeEl = '';
+    if (shape === 'circle') {
+      shapeEl = `<circle cx="${s}" cy="${s}" r="${s - 1}" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+    } else if (shape === 'rect') {
+      shapeEl = `<rect x="1" y="3" width="${size - 2}" height="${size - 6}" rx="3" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+    } else if (shape === 'diamond') {
+      shapeEl = `<polygon points="${s},1 ${size - 1},${s} ${s},${size - 1} 1,${s}" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+    } else if (shape === 'hexagon') {
+      const pts = Array.from({length:6},(_,i)=>{const a=Math.PI/180*(60*i-30);return `${s+s*0.9*Math.cos(a)},${s+s*0.9*Math.sin(a)}`;}).join(' ');
+      shapeEl = `<polygon points="${pts}" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+    } else { // doc
+      shapeEl = `<polygon points="2,1 14,1 18,5 18,19 2,19" fill="${color}" stroke="#fff" stroke-width="1.5"/>`;
+    }
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0;vertical-align:middle">
+      ${shapeEl}
+      <text x="${s}" y="${s + 4}" text-anchor="middle" fill="#fff" font-size="8" font-weight="700" font-family="system-ui,sans-serif">${letter}</text>
+    </svg>`;
+  }
+
+  // ── Build filter panel ──────────────────────────────────────────────────
+  function buildFilters(data) {
+    const typeCounts = {};
+    data.nodes.forEach(n => { typeCounts[n.type] = (typeCounts[n.type] || 0) + 1; });
+
+    const list = document.getElementById('filterList');
+    list.innerHTML = '';
+    Object.entries(TYPE_META).forEach(([type, meta]) => {
+      if (!typeCounts[type]) return;
+      const item = document.createElement('label');
+      item.className = 'filter-item';
+      item.innerHTML = `
+        <input type="checkbox" checked data-type="${type}">
+        ${shapeIcon(meta.shape, meta.color, meta.letter)}
+        <span>${meta.label}</span>
+        <span class="count-badge">${typeCounts[type]}</span>`;
+      item.querySelector('input').addEventListener('change', function () {
+        if (this.checked) hiddenTypes.delete(type);
+        else hiddenTypes.add(type);
+        renderCurrent();
+      });
+      list.appendChild(item);
+    });
+
+    const linkLegend = document.getElementById('legendLinks');
+    linkLegend.innerHTML = '';
+    const usedRelations = new Set(data.links.map(l => l.relation));
+    Object.entries(LINK_META).forEach(([rel, meta]) => {
+      if (!usedRelations.has(rel)) return;
+      const item = document.createElement('div');
+      item.className = 'filter-item';
+      item.innerHTML = `
+        <span style="display:inline-block;width:20px;height:2px;background:${meta.color};border-radius:2px;flex-shrink:0"></span>
+        <span>${meta.label}</span>`;
+      linkLegend.appendChild(item);
+    });
+  }
+
+  // ── Stats header ────────────────────────────────────────────────────────
+  function buildStats(stats) {
+    const el = document.getElementById('graphStats');
+    el.innerHTML = '';
+    const map = [
+      { key: 'users',       label: 'Usuarios',    color: '#f97316' },
+      { key: 'devices',     label: 'Dispositivos', color: '#6366f1' },
+      { key: 'credentials', label: 'Credenciales', color: '#f59e0b' },
+      { key: 'files',       label: 'Archivos',     color: '#8b5cf6' },
+      { key: 'templates',   label: 'Templates',    color: '#22c55e' },
+    ];
+    map.forEach(({ key, label, color }) => {
+      if (!stats[key]) return;
+      const chip = document.createElement('span');
+      chip.className = 'stat-chip';
+      chip.style.background = color;
+      chip.textContent = `${stats[key]} ${label}`;
+      el.appendChild(chip);
+    });
+  }
+
+  // ── Highlight search ────────────────────────────────────────────────────
+  function applySearch(q) {
+    searchQuery = q.toLowerCase().trim();
+    if (!graphInstance) return;
+    const nodes = document.querySelectorAll('#graphContainer .node');
+    nodes.forEach(el => {
+      const datum = d3.select(el).datum();
+      if (!datum) return;
+      if (!searchQuery || datum.label.toLowerCase().includes(searchQuery)) {
+        el.classList.remove('node-dimmed');
+      } else {
+        el.classList.add('node-dimmed');
+      }
+    });
+  }
+
+  // ── Render graph ────────────────────────────────────────────────────────
+  function renderCurrent() {
+    if (!graphData) return;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    // Save references BEFORE render() clears container.innerHTML
+    const zoomControls = document.getElementById('zoomControls');
+    const emptyState = document.getElementById('emptyState');
+    graphInstance = window.RelationshipGraph.render(container, graphData, {
+      width: w, height: h,
+      hiddenTypes: Array.from(hiddenTypes),
+      chargeStrength: -350,
+      linkDistance: 120,
+      onNodeClick: handleNodeClick,
+    });
+    // Re-append detached elements after render cleared the container
+    if (zoomControls) container.appendChild(zoomControls);
+    if (emptyState) container.appendChild(emptyState);
+
+    const nodeCount = graphData.nodes.filter(n => !hiddenTypes.has(n.type)).length;
+    document.getElementById('emptyState').classList.toggle('visible', nodeCount === 0);
+
+    if (searchQuery) applySearch(searchQuery);
+  }
+
+  // ── Node click → navigate ───────────────────────────────────────────────
+  function handleNodeClick(d) {
+    const urls = {
+      user_admin:      '/users/list',
+      user_staff:      '/users/list',
+      user:            '/users/list',
+      device:          '/devices/list',
+      credential:      '/devices/list',
+      device_file:     '/devices/list',
+      config_template: '/config-templates/list',
+      config_file:     '/config-templates/list',
+    };
+    const url = urls[d.type];
+    if (url) window.location.href = url;
+  }
+
+  // ── Zoom controls ────────────────────────────────────────────────────────
+  document.getElementById('btnZoomIn').addEventListener('click', () => {
+    if (graphInstance) {
+      const svg = d3.select('#graphContainer svg');
+      svg.transition().duration(300).call(graphInstance.zoomBehavior.scaleBy, 1.4);
+    }
+  });
+  document.getElementById('btnZoomOut').addEventListener('click', () => {
+    if (graphInstance) {
+      const svg = d3.select('#graphContainer svg');
+      svg.transition().duration(300).call(graphInstance.zoomBehavior.scaleBy, 0.7);
+    }
+  });
+  document.getElementById('btnZoomReset').addEventListener('click', () => {
+    if (graphInstance) graphInstance.zoomToFit();
+  });
+  document.getElementById('btnFitGraph').addEventListener('click', () => {
+    if (graphInstance) graphInstance.zoomToFit();
+  });
+
+  // ── Search ───────────────────────────────────────────────────────────────
+  let searchTimer = null;
+  document.getElementById('graphSearchInput').addEventListener('input', function () {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => applySearch(this.value), 200);
+  });
+
+  // ── Load data ────────────────────────────────────────────────────────────
+  async function load() {
+    try {
+      const resp = await fetch('/graph/api', { credentials: 'include' });
+      if (!resp.ok) throw new Error('API error');
+      const data = await resp.json();
+      graphData = data;
+      buildStats(data.stats || {});
+      buildFilters(data);
+      renderCurrent();
+    } catch (e) {
+      document.getElementById('graphStats').innerHTML =
+        '<span class="stat-chip" style="background:#dc3545">Error al cargar datos</span>';
+      console.error(e);
+    }
+  }
+
+  load();
+})();
+</script>
+{% endblock %}

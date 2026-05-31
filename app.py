@@ -42,6 +42,7 @@ app.config['DEBUG_MODE'] = bool(CFG.get('debug_mode'))
 app.config['DB_ENCRYPTION_KEY'] = CFG.get('db_encryption_key') or ''
 app.config['UI_PRIMARY'] = CFG.get('ui_primary') or '#005349'
 app.config['UI_SECONDARY'] = CFG.get('ui_secondary') or '#009f8c'
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload
 app.json = MongoJSONProvider(app)
 CORS(app)
 
@@ -117,6 +118,9 @@ app.register_blueprint(user_bp, url_prefix='/users')
 app.register_blueprint(devices_bp, url_prefix='/devices')
 app.register_blueprint(vault_bp, url_prefix='/vault')
 app.register_blueprint(config_templates_bp, url_prefix='/config-templates')
+
+from utils.graph import graph_bp
+app.register_blueprint(graph_bp, url_prefix='/graph')
 
 # Initialize custom template filters
 init_filters(app)

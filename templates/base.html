@@ -241,6 +241,11 @@
                             <i class="fa-solid fa-file-code"></i> Config Templates
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('graph.graph_page') }}">
+                            <i class="fa-solid fa-diagram-project"></i> Relaciones
+                        </a>
+                    </li>
                     {% endif %}
                     {% endif %}
                 </ul>
@@ -316,22 +321,30 @@
       <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="localCryptoModalLabel"><i class="fa-solid fa-lock"></i> Semilla de cifrado local</h5>
+            <h5 class="modal-title" id="localCryptoModalLabel"><i class="fa-solid fa-lock"></i> Llavero de semillas</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <p class="mb-2">Introduce tu semilla de 12 palabras. Esta semilla nunca se envía al servidor. Puedes optar por recordar la semilla durante esta sesión del navegador.</p>
-            <textarea id="lc_seed" class="form-control" rows="2" placeholder="semilla de 12 palabras"></textarea>
-            <div id="lc_suggest" class="mt-2"></div>
+            <p class="mb-3 text-muted small">Tus semillas nunca se envían al servidor. El descifrado probará automáticamente todas las semillas de este llavero. Al cifrar nuevos datos, se usará la semilla marcada como activa.</p>
+            
+            <div id="lc_keychain_list" class="mb-3"></div>
+
+            <hr>
+            <h6 class="mb-2">Añadir nueva semilla</h6>
+            <div class="mb-2">
+              <input type="text" id="lc_label" class="form-control mb-2" placeholder="Etiqueta (ej: Semilla trabajo)">
+              <textarea id="lc_seed" class="form-control" rows="2" placeholder="semilla de 12 palabras"></textarea>
+              <div id="lc_suggest" class="mt-2"></div>
+            </div>
             <div class="form-check mt-2">
               <input class="form-check-input" type="checkbox" value="1" id="lc_remember">
-              <label class="form-check-label" for="lc_remember">Recordar durante esta sesión</label>
+              <label class="form-check-label" for="lc_remember">Recordar llavero durante esta sesión</label>
             </div>
+            <button type="button" id="lc_add_btn" class="btn btn-outline-primary btn-sm mt-2"><i class="fa-solid fa-plus"></i> Añadir semilla</button>
             <div id="lc_error" class="text-danger small mt-2" style="display:none;"></div>
           </div>
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
-            <button type="button" id="lc_apply_btn" class="btn btn-primary"><i class="fa-solid fa-key"></i> Activar</button>
           </div>
         </div>
       </div>
@@ -353,49 +366,50 @@
             var toggleButtons = document.querySelectorAll('[data-bs-target="#sidebarMenu"]');
             var sidebarMenu = document.getElementById('sidebarMenu');
             var mainContent = document.getElementById('mainContent');
-            
-            // Function to adjust main content width
-            function adjustMainContent() {
-                if (sidebarMenu.classList.contains('show')) {
-                    // Sidebar is visible, reduce main content width
-                    mainContent.classList.remove('col-12');
-                    mainContent.classList.add('col-md-9', 'ms-sm-auto', 'col-lg-10');
-                } else {
-                    // Sidebar is hidden, expand main content to full width
-                    mainContent.classList.remove('col-md-9', 'ms-sm-auto', 'col-lg-10');
-                    mainContent.classList.add('col-12');
-                }
-            }
-            
-            // Add click event listeners to toggle buttons
-            toggleButtons.forEach(function(button) {
-                button.addEventListener('click', function() {
-                    // This ensures the toggle works properly
-                    var bsCollapse = bootstrap.Collapse.getInstance(sidebarMenu);
-                    
-                    if (!bsCollapse) {
-                        bsCollapse = new bootstrap.Collapse(sidebarMenu, {
-                            toggle: false
-                        });
-                    }
-                    
+            if (sidebarMenu && mainContent) {
+                // Function to adjust main content width
+                function adjustMainContent() {
                     if (sidebarMenu.classList.contains('show')) {
-                        bsCollapse.hide();
+                        // Sidebar is visible, reduce main content width
+                        mainContent.classList.remove('col-12');
+                        mainContent.classList.add('col-md-9', 'ms-sm-auto', 'col-lg-10');
                     } else {
-                        bsCollapse.show();
+                        // Sidebar is hidden, expand main content to full width
+                        mainContent.classList.remove('col-md-9', 'ms-sm-auto', 'col-lg-10');
+                        mainContent.classList.add('col-12');
                     }
-                    
-                    // Wait for the collapse animation to complete
-                    setTimeout(adjustMainContent, 350);
+                }
+                
+                // Add click event listeners to toggle buttons
+                toggleButtons.forEach(function(button) {
+                    button.addEventListener('click', function() {
+                        // This ensures the toggle works properly
+                        var bsCollapse = bootstrap.Collapse.getInstance(sidebarMenu);
+                        
+                        if (!bsCollapse) {
+                            bsCollapse = new bootstrap.Collapse(sidebarMenu, {
+                                toggle: false
+                            });
+                        }
+                        
+                        if (sidebarMenu.classList.contains('show')) {
+                            bsCollapse.hide();
+                        } else {
+                            bsCollapse.show();
+                        }
+                        
+                        // Wait for the collapse animation to complete
+                        setTimeout(adjustMainContent, 350);
+                    });
                 });
-            });
-            
-            // Listen for Bootstrap's events to handle cases when sidebar is toggled programmatically
-            sidebarMenu.addEventListener('shown.bs.collapse', adjustMainContent);
-            sidebarMenu.addEventListener('hidden.bs.collapse', adjustMainContent);
-            
-            // Initialize main content to full width on page load
-            adjustMainContent();
+                
+                // Listen for Bootstrap's events to handle cases when sidebar is toggled programmatically
+                sidebarMenu.addEventListener('shown.bs.collapse', adjustMainContent);
+                sidebarMenu.addEventListener('hidden.bs.collapse', adjustMainContent);
+                
+                // Initialize main content to full width on page load
+                adjustMainContent();
+            }
         });
 
         // Global toast helpers
@@ -440,28 +454,79 @@
 
         // LocalCrypto manager (in-memory, optional session storage)
         var LocalCrypto = {
-          _mnemonic: null,
+          _keychain: [], // Array of { id: string, label: string, mnemonic: string }
+          _activeIndex: -1,
           _remember: false,
-          get mnemonic(){ return this._mnemonic; },
-          isReady: function(){ return !!this._mnemonic; },
-          setMnemonic: function(mnemonic, remember){
-            this._mnemonic = (mnemonic || '').trim();
-            this._remember = !!remember;
-            if (this._remember) {
-              try { sessionStorage.setItem('lc_mnemonic', this._mnemonic); } catch(e) {}
-            } else {
-              try { sessionStorage.removeItem('lc_mnemonic'); } catch(e) {}
+          
+          get keychain(){ return this._keychain; },
+          get activeIndex(){ return this._activeIndex; },
+          get activeSeed(){ return this._activeIndex >= 0 ? this._keychain[this._activeIndex] : null; },
+          
+          isReady: function(){ return this._keychain.length > 0; },
+          
+          addSeed: function(label, mnemonic, setAsActive, remember){
+            mnemonic = (mnemonic || '').trim();
+            if (!mnemonic) return;
+            var id = 'seed_' + Date.now();
+            this._keychain.push({ id: id, label: label || 'Semilla', mnemonic: mnemonic });
+            if (setAsActive || this._activeIndex === -1) {
+              this._activeIndex = this._keychain.length - 1;
             }
+            if (typeof remember !== 'undefined') this._remember = !!remember;
+            this.saveState();
             document.dispatchEvent(new CustomEvent('local-crypto-ready', { detail: { ready: true } }));
           },
+          
+          removeSeed: function(index){
+            if (index >= 0 && index < this._keychain.length) {
+              this._keychain.splice(index, 1);
+              if (this._activeIndex === index) this._activeIndex = this._keychain.length > 0 ? 0 : -1;
+              else if (this._activeIndex > index) this._activeIndex--;
+              this.saveState();
+              if (this._keychain.length === 0) {
+                document.dispatchEvent(new CustomEvent('local-crypto-cleared', { detail: { ready: false } }));
+              } else {
+                document.dispatchEvent(new CustomEvent('local-crypto-ready', { detail: { ready: true } }));
+              }
+            }
+          },
+          
+          setActive: function(index){
+            if (index >= 0 && index < this._keychain.length) {
+              this._activeIndex = index;
+              this.saveState();
+            }
+          },
+
+          saveState: function() {
+            if (this._remember) {
+              try { 
+                sessionStorage.setItem('lc_keychain', JSON.stringify(this._keychain)); 
+                sessionStorage.setItem('lc_activeIndex', this._activeIndex);
+              } catch(e) {}
+            } else {
+              try { 
+                sessionStorage.removeItem('lc_keychain'); 
+                sessionStorage.removeItem('lc_activeIndex');
+              } catch(e) {}
+            }
+          },
+          
           clear: function(){
-            this._mnemonic = null;
+            this._keychain = [];
+            this._activeIndex = -1;
             this._remember = false;
-            try { sessionStorage.removeItem('lc_mnemonic'); } catch(e) {}
+            try { 
+              sessionStorage.removeItem('lc_keychain'); 
+              sessionStorage.removeItem('lc_activeIndex'); 
+              sessionStorage.removeItem('lc_mnemonic'); // Legacy
+            } catch(e) {}
             document.dispatchEvent(new CustomEvent('local-crypto-cleared', { detail: { ready: false } }));
           },
-          _deriveKey: async function(saltBytes, iterations){
-            var baseKey = await crypto.subtle.importKey('raw', enc.encode(this._mnemonic || ''), 'PBKDF2', false, ['deriveKey']);
+
+          _deriveKey: async function(saltBytes, iterations, specificMnemonic){
+            var m = specificMnemonic || (this.activeSeed ? this.activeSeed.mnemonic : '');
+            var baseKey = await crypto.subtle.importKey('raw', enc.encode(m), 'PBKDF2', false, ['deriveKey']);
             return await crypto.subtle.deriveKey(
               { name: 'PBKDF2', salt: saltBytes, iterations: iterations || 200000, hash: 'SHA-256' },
               baseKey,
@@ -470,11 +535,12 @@
               ['encrypt','decrypt']
             );
           },
+
           encryptJSON: async function(obj){
-            if (!this.isReady()) throw new Error('LocalCrypto not ready');
+            if (!this.isReady() || !this.activeSeed) throw new Error('LocalCrypto not ready');
             var salt = randBytes(16);
             var iv = randBytes(12);
-            var key = await this._deriveKey(salt, 200000);
+            var key = await this._deriveKey(salt, 200000, this.activeSeed.mnemonic);
             var plaintext = enc.encode(JSON.stringify(obj||{}));
             var cipher = await crypto.subtle.encrypt({name:'AES-GCM', iv: iv}, key, plaintext);
             return {
@@ -482,35 +548,71 @@
               meta: { alg:'AES-GCM', kdf:'PBKDF2', iter:200000, iv:b64enc(iv), salt:b64enc(salt) }
             };
           },
+
           decryptJSON: async function(payload_b64, meta){
             if (!this.isReady()) throw new Error('LocalCrypto not ready');
             var iv = b64dec((meta && meta.iv) || '');
             var salt = b64dec((meta && meta.salt) || '');
             var iter = (meta && meta.iter) || 200000;
-            var key = await this._deriveKey(salt, iter);
             var cipher = b64dec(payload_b64);
-            var plain = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, cipher);
-            return JSON.parse(dec.decode(new Uint8Array(plain)));
+            
+            // Smart Decrypt: Try all seeds
+            var lastError = null;
+            // First try active seed
+            if (this.activeSeed) {
+              try {
+                var key = await this._deriveKey(salt, iter, this.activeSeed.mnemonic);
+                var plain = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, cipher);
+                return JSON.parse(dec.decode(new Uint8Array(plain)));
+              } catch(e) { lastError = e; }
+            }
+            // Try the rest
+            for (var i = 0; i < this._keychain.length; i++) {
+              if (i === this._activeIndex) continue;
+              try {
+                var key = await this._deriveKey(salt, iter, this._keychain[i].mnemonic);
+                var plain = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, cipher);
+                return JSON.parse(dec.decode(new Uint8Array(plain)));
+              } catch(e) { lastError = e; }
+            }
+            throw lastError || new Error('Decryption failed with all seeds');
           },
+
           encryptBytes: async function(bytes){
-            if (!this.isReady()) throw new Error('LocalCrypto not ready');
+            if (!this.isReady() || !this.activeSeed) throw new Error('LocalCrypto not ready');
             var salt = randBytes(16);
             var iv = randBytes(12);
-            var key = await this._deriveKey(salt, 200000);
+            var key = await this._deriveKey(salt, 200000, this.activeSeed.mnemonic);
             var cipher = await crypto.subtle.encrypt({name:'AES-GCM', iv: iv}, key, bytes);
             return {
               bytes: new Uint8Array(cipher),
               meta: { alg:'AES-GCM', kdf:'PBKDF2', iter:200000, iv:b64enc(iv), salt:b64enc(salt) }
             };
           },
+
           decryptBytes: async function(cipherBytes, meta){
             if (!this.isReady()) throw new Error('LocalCrypto not ready');
             var iv = b64dec((meta && meta.iv) || '');
             var salt = b64dec((meta && meta.salt) || '');
             var iter = (meta && meta.iter) || 200000;
-            var key = await this._deriveKey(salt, iter);
-            var plain = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, cipherBytes);
-            return new Uint8Array(plain);
+            
+            var lastError = null;
+            if (this.activeSeed) {
+              try {
+                var key = await this._deriveKey(salt, iter, this.activeSeed.mnemonic);
+                var plain = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, cipherBytes);
+                return new Uint8Array(plain);
+              } catch(e) { lastError = e; }
+            }
+            for (var i = 0; i < this._keychain.length; i++) {
+              if (i === this._activeIndex) continue;
+              try {
+                var key = await this._deriveKey(salt, iter, this._keychain[i].mnemonic);
+                var plain = await crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, cipherBytes);
+                return new Uint8Array(plain);
+              } catch(e) { lastError = e; }
+            }
+            throw lastError || new Error('Decryption failed with all seeds');
           }
         };
 
@@ -519,9 +621,19 @@
 
         // Auto-restore from session if present
         try{
-          var saved = sessionStorage.getItem('lc_mnemonic');
-          if (saved && typeof saved === 'string' && saved.trim().length > 0){
-            LocalCrypto.setMnemonic(saved, true);
+          var savedKeychain = sessionStorage.getItem('lc_keychain');
+          var savedIndex = sessionStorage.getItem('lc_activeIndex');
+          var legacyMnemonic = sessionStorage.getItem('lc_mnemonic');
+          
+          if (savedKeychain) {
+            LocalCrypto._keychain = JSON.parse(savedKeychain);
+            LocalCrypto._activeIndex = savedIndex ? parseInt(savedIndex, 10) : -1;
+            LocalCrypto._remember = true;
+            if (LocalCrypto._keychain.length > 0) {
+              document.dispatchEvent(new CustomEvent('local-crypto-ready', { detail: { ready: true } }));
+            }
+          } else if (legacyMnemonic && typeof legacyMnemonic === 'string' && legacyMnemonic.trim().length > 0){
+            LocalCrypto.addSeed('Semilla principal', legacyMnemonic, true, true);
           }
         }catch(e){}
 
@@ -572,11 +684,60 @@
           return true;
         }
 
-        // LocalCrypto modal: wire handlers for all authenticated users; auto-prompt only if USER_LOCAL_KEY is required
+        // LocalCrypto modal
         document.addEventListener('DOMContentLoaded', function(){
           var modalEl = document.getElementById('localCryptoModal');
           if (!modalEl) return;
+          
+          window.renderKeychainUI = function() {
+            var listEl = document.getElementById('lc_keychain_list');
+            if (!listEl) return;
+            listEl.innerHTML = '';
+            
+            if (LocalCrypto.keychain.length === 0) {
+              listEl.innerHTML = '<div class="alert alert-warning py-2 mb-0 small">No hay semillas en el llavero.</div>';
+              return;
+            }
+            
+            var frag = document.createDocumentFragment();
+            LocalCrypto.keychain.forEach(function(seed, index) {
+              var isActive = index === LocalCrypto.activeIndex;
+              var row = document.createElement('div');
+              row.className = 'd-flex justify-content-between align-items-center mb-2 p-2 border rounded';
+              if (isActive) row.classList.add('bg-light', 'border-primary');
+              
+              var left = document.createElement('div');
+              left.innerHTML = '<div class="fw-bold">' + seed.label + '</div><div class="small text-muted" style="font-size: 0.7rem;">' + seed.id + '</div>';
+              
+              var right = document.createElement('div');
+              if (!isActive) {
+                var btnActive = document.createElement('button');
+                btnActive.className = 'btn btn-sm btn-outline-success me-1';
+                btnActive.innerHTML = '<i class="fa-solid fa-check"></i> Activar';
+                btnActive.onclick = function() { LocalCrypto.setActive(index); window.renderKeychainUI(); };
+                right.appendChild(btnActive);
+              } else {
+                var badge = document.createElement('span');
+                badge.className = 'badge bg-primary me-2';
+                badge.innerText = 'Activa';
+                right.appendChild(badge);
+              }
+              
+              var btnDel = document.createElement('button');
+              btnDel.className = 'btn btn-sm btn-outline-danger';
+              btnDel.innerHTML = '<i class="fa-solid fa-trash"></i>';
+              btnDel.onclick = function() { LocalCrypto.removeSeed(index); window.renderKeychainUI(); };
+              right.appendChild(btnDel);
+              
+              row.appendChild(left);
+              row.appendChild(right);
+              frag.appendChild(row);
+            });
+            listEl.appendChild(frag);
+          };
+
           modalEl.addEventListener('shown.bs.modal', async function(){
+            window.renderKeychainUI();
             await loadBip39Words();
             var seedEl = document.getElementById('lc_seed');
             var suggestEl = document.getElementById('lc_suggest');
@@ -587,7 +748,13 @@
             };
             seedEl.removeEventListener('input', onInput);
             seedEl.addEventListener('input', onInput);
-            suggestEl && suggestEl.addEventListener('click', function(ev){
+            
+            // clear old click listener if needed
+            var newSuggestEl = suggestEl.cloneNode(true);
+            if (suggestEl.parentNode) suggestEl.parentNode.replaceChild(newSuggestEl, suggestEl);
+            suggestEl = newSuggestEl;
+            
+            suggestEl.addEventListener('click', function(ev){
               var t = ev.target; if (!t || !t.dataset || !t.dataset.word) return;
               seedEl.value = replaceLastToken(seedEl.value, t.dataset.word);
               seedEl.dispatchEvent(new Event('input'));
@@ -596,31 +763,41 @@
             // initial render
             seedEl.dispatchEvent(new Event('input'));
           });
+
           // Auto-prompt only for users that require local key
           if (USER_LOCAL_KEY && !LocalCrypto.isReady()){
             var modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
             modal.show();
           }
-          var applyBtn = document.getElementById('lc_apply_btn');
-          var seedEl = document.getElementById('lc_seed');
-          var rememberEl = document.getElementById('lc_remember');
-          var errEl = document.getElementById('lc_error');
-          if (applyBtn && seedEl) {
-            applyBtn.addEventListener('click', function(){
-              if (errEl){ errEl.style.display='none'; }
-              var seed = (seedEl.value || '').trim().toLowerCase();
-              var words = seed.split(/\s+/).filter(function(w){ return w; });
-              if (words.length !== 12){
-                if (errEl){ errEl.textContent = 'La semilla debe tener 12 palabras.'; errEl.style.display='block'; }
+
+          var addBtn = document.getElementById('lc_add_btn');
+          if (addBtn) {
+            addBtn.addEventListener('click', function(){
+              var seedEl = document.getElementById('lc_seed');
+              var labelEl = document.getElementById('lc_label');
+              var errEl = document.getElementById('lc_error');
+              var remEl = document.getElementById('lc_remember');
+              
+              var val = (seedEl.value || '').trim().toLowerCase();
+              if (errEl) errEl.style.display = 'none';
+              
+              var words = val.split(/\s+/).filter(Boolean);
+              if (words.length !== 12 && words.length !== 24){
+                if (errEl) { errEl.textContent = 'La semilla debe tener 12 o 24 palabras. Contadas: ' + words.length; errEl.style.display = 'block'; }
                 return;
               }
               if (BIP39_WORDS && !allWordsValid(words)){
-                if (errEl){ errEl.textContent = 'Una o más palabras no están en el listado BIP-39.'; errEl.style.display='block'; }
+                if (errEl) { errEl.textContent = 'Algunas palabras no son válidas en la lista BIP39.'; errEl.style.display = 'block'; }
                 return;
               }
-              LocalCrypto.setMnemonic(seed, !!(rememberEl && rememberEl.checked));
-              toastSuccess('Cifrado local activado');
-              try{ var m = bootstrap.Modal.getInstance(modalEl); m && m.hide(); }catch(e){}
+              
+              LocalCrypto.addSeed(labelEl.value, val, false, remEl ? remEl.checked : false);
+              seedEl.value = '';
+              labelEl.value = '';
+              var suggestEl = document.getElementById('lc_suggest');
+              if(suggestEl) suggestEl.innerHTML = '';
+              window.renderKeychainUI();
+              toastSuccess('Semilla añadida al llavero');
             });
           }
         });
@@ -641,17 +818,19 @@
               // Transform JSON plaintext for devices credentials
               if (method === 'post' && !isEncryptedUrl(url) && /\/devices\/[^/]+\/credentials(\b|\?|#)/.test(url) && !isUploadUrl(url)){
                 if (config.data && !(config.data instanceof FormData)){
-                  var t = config.data.type;
-                  if (t === 'userpass' && (('username' in config.data) || ('password' in config.data))){
-                    var payloadUP = { username: config.data.username, password: config.data.password, note: config.data.note || null };
-                    var encUP = await LocalCrypto.encryptJSON(payloadUP);
-                    config.url = url.replace(/\/credentials(\b)/, '/credentials/encrypted');
-                    config.data = { type: 'userpass', payload_b64: encUP.payload_b64, meta: encUP.meta };
-                  } else if (t === 'token' && (('token' in config.data))){
-                    var payloadTK = { token: config.data.token, label: (config.data.label || null), note: config.data.note || null };
-                    var encTK = await LocalCrypto.encryptJSON(payloadTK);
-                    config.url = url.replace(/\/credentials(\b)/, '/credentials/encrypted');
-                    config.data = { type: 'token', payload_b64: encTK.payload_b64, meta: encTK.meta };
+                  if (config.data._encrypt_local === true) {
+                    var t = config.data.type;
+                    if (t === 'userpass' && (('username' in config.data) || ('password' in config.data))){
+                      var payloadUP = { username: config.data.username, password: config.data.password, note: config.data.note || null };
+                      var encUP = await LocalCrypto.encryptJSON(payloadUP);
+                      config.url = url.replace(/\/credentials(\b)/, '/credentials/encrypted');
+                      config.data = { type: 'userpass', payload_b64: encUP.payload_b64, meta: encUP.meta };
+                    } else if (t === 'token' && (('token' in config.data))){
+                      var payloadTK = { token: config.data.token, label: (config.data.label || null), note: config.data.note || null };
+                      var encTK = await LocalCrypto.encryptJSON(payloadTK);
+                      config.url = url.replace(/\/credentials(\b)/, '/credentials/encrypted');
+                      config.data = { type: 'token', payload_b64: encTK.payload_b64, meta: encTK.meta };
+                    }
                   }
                 }
               }
@@ -671,7 +850,14 @@
               // Transform FormData upload to encrypted upload (devices and vault)
               if (method === 'post' && isUploadUrl(url) && config.data instanceof FormData){
                 var already = config.data.get('encrypted');
-                if (already !== 'true'){
+                // For devices upload, check explicitly for _encrypt_local
+                var isDeviceUpload = /\/devices\/[^/]+\//.test(url);
+                var shouldEncrypt = already !== 'true';
+                if (isDeviceUpload && config.data.get('_encrypt_local') !== 'true') {
+                    shouldEncrypt = false;
+                }
+                
+                if (shouldEncrypt){
                   var typeVal = config.data.get('type') || ( /\/vault\//.test(url) ? 'file' : 'certificate');
                   var labelVal = config.data.get('label');
                   var noteVal = config.data.get('note');

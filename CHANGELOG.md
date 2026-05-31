@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-05-31
+
+### Added
+
+#### Relationship Graph
+- New interactive **Relationship Graph** module under `/graph` to visualize system entities and their connections (users, devices, credentials, files, and templates).
+- Color-coded nodes with distinct shapes and letter badges for user roles, devices, credentials, files, and config templates.
+- Features including full-text search, node type filtering, interactive zoom controls (zoom in, zoom out, reset, and fit to screen), and node click redirection to entity list pages.
+- Access-controlled API endpoint (`/graph/api`) exposing nodes based on active user role/ownership.
+
+#### Local Encryption Keychain (Llavero)
+- Multi-seed local keychain replacing the single-seed local encryption input.
+- Support for multiple BIP-39 seed phrases (both 12 and 24 words) with custom labels.
+- Automated decryption fallback that sequentially tests all keychain seeds when decrypting client-side items.
+- Session-persistent storage options to remember the keychain.
+
+#### File Attachments & Config Files
+- **Device File Attachments**: Added support for uploading, listing, downloading, and deleting files for individual devices (secured in GridFS).
+- **Config Template Files**: Config templates dashboard now supports uploading, downloading, and deleting config-related files using GridFS.
+- Added global 50 MB maximum upload size limit configuration (`MAX_CONTENT_LENGTH`).
+
+#### Real-time Template Validation & Vault Enhancements
+- Real-time linting/validation of JSON, XML, and YAML templates in the template editor (including server-side validation using PyYAML).
+- Separated client-side decrypted and server-side revealed actions in Vault cards.
+- Server-encrypted TOTP keys now display a live circular rotation progress timer (SVG radial ring indicator) showing remaining seconds in real-time.
+
+### Technical
+
+#### Backend
+- Registered `/graph` blueprint in `app.py`.
+- New `utils/graph.py` file with graph rendering endpoints.
+- New endpoints in `utils/config_templates.py` for config template files management (`/api/files`, etc.).
+- New endpoints in `utils/devices.py` for device file attachment uploads and downloads (`/<device_id>/files`, etc.).
+- Added `MAX_CONTENT_LENGTH = 50 * 1024 * 1024` limit in `app.py`.
+
+#### Frontend
+- New relationship graph page: `templates/graph/view.html`.
+- New relationship graph stylesheet & D3.js visualization script: `static/js/graph.js`.
+- Updated `templates/base.html` with keychain modal and graph menu item.
+- Updated `templates/vault/list.html` with server vs client decryption buttons, SVG circular TOTP progress rings, and Vue.js methods.
+- Updated `templates/config_templates/list.html` to support file uploading/management and real-time syntax checking.
+- Updated `templates/devices/credentials.html` to support file uploads/downloads and local decryption settings.
+
+---
+
 ## [1.0.1] - 2024-12-19
 
 ### Added
